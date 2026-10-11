@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)][string]$AssetPath,
   [Parameter(Mandatory = $true)][string]$StatePath,
   [int]$InitialSize = 190,
