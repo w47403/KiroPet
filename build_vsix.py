@@ -52,5 +52,14 @@ with ZipFile(out, 'w', ZIP_DEFLATED, compresslevel=7) as z:
     z.writestr('extension.vsixmanifest', manifest)
     z.writestr('[Content_Types].xml', content_types)
     for rel in files:
-        z.write(ROOT / rel, 'extension/' + rel)
+        target = 'extension/' + rel
+        if rel.endswith('.ps1'):
+            # Windows PowerShell 5.1 decodes UTF-8 without BOM as ANSI. This
+            # corrupts Chinese text and can make the whole GUI script fail.
+            raw = (ROOT / rel).read_bytes()
+            if not raw.startswith(b'\xef\xbb\xbf'):
+                raw = b'\xef\xbb\xbf' + raw
+            z.writestr(target, raw)
+        else:
+            z.write(ROOT / rel, target)
 print(out)
