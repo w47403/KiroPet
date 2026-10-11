@@ -1,6 +1,6 @@
 # 鲸鱼娘逐帧动画设计
 
-采用本次确认的第六版形象：蓝色渐变长发、鲸鳍耳、喷水呆毛、白色女仆头饰、深蓝裙装、鲸鱼围裙与尾巴，大头短身比例。使用内置 image_gen 分别绘制七张 4×2 透明序列帧表，再按固定网格切分、统一缩小与留白；没有通过旋转或缩放静态立绘来合成动作。
+采用确认的第六版二头身形象。v0.5.0 使用内置 image_gen 新绘工作开场、桌前打字、桌边思考与伸懒腰、合电脑收桌子庆祝，以及转身迈步、盘腿、侧躺、跪坐伸懒腰。睡眠与侧躺、工作与编辑各使用同组图和不同节奏。13 段播放清单共 104 张帧图；没有通过旋转或缩放静态立绘来合成动作。完整新提示词见 [v0.5.0 提示词](animation-prompts-v050.md)。
 
 每个状态有 8 张独立姿势。属于有限帧动画，细节之间可能仍有手绘式差异；不是 Live2D 模型。`manifest.json` 定义逐帧时长和循环方式，三种运行环境共用。完成播放一次后保持最后姿势，互动结束恢复当前状态，新工作状态优先。
 
@@ -8,17 +8,29 @@
 
 | 状态 | 动作 | 循环 |
 | --- | --- | --- |
-| idle | 眨眼、摆尾 | 是 |
-| working | 托下巴、思考、视线变化 | 是 |
-| tool | 举扳手、检查工具 | 是 |
+| idle | 安静站立、偶尔眨眼 | 单次，由待机调度选择 |
+| sit | 盘腿坐着、歪头、眨眼 | 单次 |
+| nap | 抱尾巴侧躺、闭眼、轻醒 | 单次 |
+| stretch | 跪坐、抬手、伸懒腰、放松 | 单次 |
+| walk | 站立转身、迈步、回头挥手、回到站立 | 单次 |
+| work_start | 拉出桌子、取椅子、拿出笔记本、摆放并开盖 | 单次，5.4 秒 |
+| working | 桌前打字、视线/手指/尾巴细节 | 是，3.12 秒 |
+| work_pause | 托腮、凑近看屏幕、靠椅伸懒腰、回到键盘 | 单次，7.2 秒 |
+| tool | 复用 work_pause 桌前查看工具结果 | 循环，延续当前任务 |
 | editing | 敲键盘 | 是 |
-| done | 举手、小跳、竖拇指 | 否 |
+| done | 合电脑、起身、收桌子、庆祝、安静站立 | 单次，6.2 秒 |
 | hug | 捧脸、展开双臂 | 否 |
-| sleep | 打盹、呼吸、尾巴放松 | 是 |
+| sleep | 抱尾巴侧躺，长时间闭眼停留 | 缓慢循环 |
+
+待机从首帧安静停留 22 秒开始，选择与上次不同的小动作，播完后保持最后帧 18～45 秒。JS/Python 注入时钟与随机源可测试；WPF 使用同样的动作清单。工作事件优先，面板隐藏暂停时钟，桌面收起时暂停逐帧绘制。
+
+任务首次进入 working/tool/editing 时开场一次。收到工具/文件事件时保留任务时钟，开场不重新起播；工具完成继续工作。工作循环每 18～35 秒插入一次 work_pause，结束回到打字。`PromptSubmit` 写入 `phase:start`，即使上一轮缺少结束事件也能启动新任务。完成事件可打断开场或循环，直接播放收尾，结束保持安静姿势。
+
+Windows 边缘吸附用 WPF DoubleAnimation、340ms CubicEase EaseOut。四边阈值 36 DIP，角落同时对齐两边；1.2 秒离开延迟后隐藏，仅保留 26 DIP 标签。展开可反向打断当前动画。工作区从鼠标所在显示器取得并转换为 WPF 坐标。Tk 采用相同三次缓出曲线，16ms 定时推进，当前只用主屏幕范围。
 
 ## 素材构建
 
-透明 sprite sheet 位于 `assets/animations/source/`，使用保留像素和 alpha 的无损 WebP 归档，四列两行，共 8 帧。生成工具的原始 PNG 另留在本地，不进入 Git。`python scripts/prepare_animation_assets.py` 需要 Pillow；安装后的桌宠不需要 Pillow。构建不改变帧的独立姿势，只按固定网格切分、编码 PNG、缩小到相同画布，并提供 Tk 默认 190px 预缩放帧。
+透明 sprite sheet 位于 `assets/animations/source/`，无损 WebP 保留原始 RGBA 像素；PNG 另留本地。`python scripts/prepare_animation_assets.py` 仅开发时需要 Pillow，按四列两行切分；侧躺/工作图沿网格附近透明间隙寻找切线，避免生成图轻微偏移造成截断。同一张表统一缩放、留白，输出固定画布和 Tk 190px 预缩放帧，保持原本绘制的姿势变化。
 
 - 播放帧：`assets/animations/<state>/00.png` 至 `07.png`，256×342，透明背景。
 - Tk 帧：`assets/animations/tk/190/<state>/00.png` 至 `07.png`，142×190。
@@ -28,11 +40,11 @@
 ## 开发验证
 
 - `node --test test/*.test.js`：帧时长边界、互动恢复、事件打断、完成重播、面板暂停与恢复、实际生成的 Webview 脚本。
-- `python build_vsix.py` 后执行 `python -m unittest discover -s test -p 'test_*.py'`：RGBA 透明度、56 帧内容不同、所有帧与运行时模块实际进入 VSIX、PowerShell BOM。
+- `python build_vsix.py` 后执行 `python -m unittest discover -s test -p 'test_*.py'`：RGBA 透明度、每段 8 帧内容不同、VSIX 文件/BOM、待机调度、吸附几何、真实 stdin Hook 元数据与无效输入。
 - Windows：`powershell.exe -NoProfile -STA -File test/verify-wpf.ps1`：实际 WPF 解码和离屏渲染。输出位于 `output/wpf-validation/`。
 - 跨平台 Tk 需要对应平台手动验证窗口管理器的透明与置顶行为。
 
-## 完整图像生成提示词
+## v0.4.0 原始提示词（working / sleep 已由 v0.5.0 替换）
 
 ### idle
 
