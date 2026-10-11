@@ -25,7 +25,7 @@ function settings() { return vscode.workspace.getConfiguration('kiroWhalePet'); 
 function writableFiles() {
   const dir = dataDir();
   fs.mkdirSync(dir, {recursive: true});
-  for (const item of ['HookSignal.ps1', 'HookSignal.sh']) {
+  for (const item of ['HookSignal.ps1', 'HookSignal.sh', 'status_signal.py']) {
     const target = path.join(dir, item);
     const source = path.join(extContext.extensionPath, 'scripts', item);
     fs.copyFileSync(source, target); // Stable path across VSIX upgrades.
@@ -36,16 +36,17 @@ function readActivity() {
   try {
     const obj = JSON.parse(fs.readFileSync(localStateFile(), 'utf8'));
     return {state: STATES.has(obj.state) ? obj.state : 'idle',
-      project: String(obj.project || '').slice(0, 80), at: Number(obj.at) || 0};
+      project: String(obj.project || '').slice(0, 80), detail: String(obj.detail || '').replace(/[\x00-\x1f]/g,' ').slice(0, 160),
+      phase: ['start','continue','finish'].includes(obj.phase) ? obj.phase : '', at: Number(obj.at) || 0};
   } catch (_) { return {state: 'idle', project: '', at: 0}; }
 }
-function writeActivity(state, project = '') {
+function writeActivity(state, project = '', detail = '', phase = '') {
   if (!STATES.has(state)) return;
   const dir = dataDir();
   try {
     fs.mkdirSync(dir, {recursive: true});
     const tmp = path.join(dir, `activity.${process.pid}.tmp`);
-    fs.writeFileSync(tmp, JSON.stringify({state, project, at: Date.now()}), 'utf8');
+    fs.writeFileSync(tmp, JSON.stringify({state, project, phase, detail: String(detail).slice(0,160), at: Date.now()}), 'utf8');
     fs.renameSync(tmp, localStateFile());
     refresh();
   } catch (err) { vscode.window.showWarningMessage('鲸鱼娘状态写入失败：' + err.message); }
@@ -55,7 +56,7 @@ function refresh() {
   const text = EMOJI[activity.state] || EMOJI.idle;
   if (statusItem) {
     statusItem.text = `${text} 鲸鱼娘`;
-    statusItem.tooltip = `鲸鱼娘 · ${activity.state}${activity.project ? ' · ' + activity.project : ''}\n点击打开控制菜单`;
+    statusItem.tooltip = `鲸鱼娘 · ${activity.detail || activity.state}${activity.project ? ' · ' + activity.project : ''}\n点击打开控制菜单`;
   }
   if (panel) panel.webview.postMessage({type: 'activity', activity});
 }
@@ -100,7 +101,7 @@ function spawnPet(command, args, onFail, isRetry = false) {
 function startDesktop(forceDesktop = false) {
   if (!forceDesktop && settings().get('desktopMode', 'auto') === 'panel') { openPanel(); return; }
   if (isRunning()) { vscode.window.showInformationMessage('鲸鱼娘已经在桌面上啦～'); return; }
-  writeActivity('idle');
+  // Reopening a companion must retain the AI's current work event.
   lastDesktopError = '';
   const size = Math.max(100, Math.min(320, Number(settings().get('size', 190)) || 190));
   const image = path.join(assetsDir(), 'whale-girl.png');
@@ -128,25 +129,26 @@ function psQuote(s) { return '"' + String(s).replace(/"/g, '`"') + '"'; }
 function safeProjectLabel(name) {
   return String(name).replace(/[^\p{L}\p{N}_-]/gu, '_').slice(0, 45);
 }
-function hookCommand(state, projectName) {
+function hookCommand(state, projectName, phase = 'continue') {
   const project = safeProjectLabel(projectName);
   const stateFile = localStateFile();
   if (process.platform === 'win32') {
-    return `powershell.exe -NoLogo -NoProfile -NonInteractive -File ${psQuote(path.join(dataDir(), 'HookSignal.ps1'))} -StatePath ${psQuote(stateFile)} -State ${state} -Project ${psQuote(project)}`;
+    return `powershell.exe -NoLogo -NoProfile -NonInteractive -File ${psQuote(path.join(dataDir(), 'HookSignal.ps1'))} -StatePath ${psQuote(stateFile)} -State ${state} -Project ${psQuote(project)} -Phase ${phase}`;
   }
-  return `/bin/sh ${shellQuote(path.join(dataDir(), 'HookSignal.sh'))} ${shellQuote(stateFile)} ${shellQuote(state)} ${shellQuote(project)}`;
+  return `/bin/sh ${shellQuote(path.join(dataDir(), 'HookSignal.sh'))} ${shellQuote(stateFile)} ${shellQuote(state)} ${shellQuote(project)} ${shellQuote(phase)}`;
 }
 function hookPath(folder) { return path.join(folder.uri.fsPath, '.kiro', 'hooks', 'whale-pet.json'); }
 function buildHooks(projectName) {
   const pairs = [
     ['开始工作', 'PromptSubmit', 'working'],
     ['准备使用工具', 'PreToolUse', 'tool'],
+    ['工具调用结束', 'PostToolUse', 'working'],
     ['修改文件', 'PostFileSave', 'editing'],
     ['回答完成', 'AgentStop', 'done']
   ];
   return {version:'v1', hooks:pairs.map(([label, trigger, state]) => ({
     name: `Whale Pet - ${label}`, trigger, timeout: 5,
-    action: {type:'command', command:hookCommand(state, projectName)}
+    action: {type:'command', command:hookCommand(state, projectName, trigger==='PromptSubmit'?'start':trigger==='AgentStop'?'finish':'continue')}
   }))};
 }
 function recognizedHook(data) {
@@ -158,17 +160,22 @@ async function installForFolders(folders, silent = false) {
   if (!folders.length) return vscode.window.showWarningMessage('请先在 Kiro 打开一个本地项目文件夹。');
   if (!silent) {
     const answer = await vscode.window.showInformationMessage(
-      `将在 ${folders.length} 个已打开项目下创建独立 .kiro/hooks/whale-pet.json，记录事件状态，不读取聊天内容。`,
+      `将在 ${folders.length} 个已打开项目下安装或更新鲸鱼娘 Hook，显示工作事件、工具名称与文件名。`,
       {modal:true}, '安装联动');
     if (answer !== '安装联动') return;
   }
   let installed = 0, skipped = 0;
   for (const folder of folders) {
     const target = hookPath(folder);
-    if (fs.existsSync(target)) { skipped++; continue; }
     try {
       fs.mkdirSync(path.dirname(target), {recursive:true});
-      fs.writeFileSync(target, JSON.stringify(buildHooks(folder.name), null, 2) + '\n', {flag:'wx'});
+      if (fs.existsSync(target)) {
+        const previous = JSON.parse(fs.readFileSync(target, 'utf8'));
+        if (!recognizedHook(previous) || !previous.hooks.every(h => h.action?.type === 'command' &&
+            /HookSignal\.(ps1|sh)/.test(h.action.command || ''))) { skipped++; continue; }
+        fs.copyFileSync(target, target + '.bak');
+      }
+      fs.writeFileSync(target, JSON.stringify(buildHooks(folder.name), null, 2) + '\n');
       installed++;
     } catch (err) {
       vscode.window.showErrorMessage(`${folder.name} Hook 安装失败：${err.message}`);
@@ -258,12 +265,13 @@ let current={state:'idle',project:'',at:0};let seenAt=0;
 function draw(){if(document.hidden)return;let label={idle:'💤 待机中',working:'💻 正在处理',tool:'🛠️ 正在调用工具',editing:'📝 已修改文件',done:'✨ 完成啦',sleep:'🌙 休息中'}[current.state]||'待机中';
  document.getElementById('status').textContent=label;stage.className=current.state;
  let elapsed=(Date.now()-Number(current.at))/1000;
- document.getElementById('activity').textContent=(current.project?'项目：'+current.project+' · ':'')+
+ document.getElementById('activity').textContent=(current.detail?current.detail+' · ':'')+(current.project?'项目：'+current.project+' · ':'')+
    (elapsed>0&&Number.isFinite(elapsed)&&elapsed<36000?'事件发生于 '+Math.floor(elapsed)+' 秒前':'等待 Agent 事件');
- if(Date.now()>until)bubble.style.display='none';}
+ if(['working','tool','editing'].includes(current.state)&&Date.now()>until){bubble.textContent=current.detail||label; bubble.style.display='block';}
+ else if(Date.now()>until)bubble.style.display='none';}
 window.addEventListener('message',evt=>{const data=evt.data;if(!data||data.type!=='activity')return;
- let next=data.activity;const newEvent=next.at!==seenAt;if(newEvent){seenAt=next.at;let map={working:'开始工作啦～',tool:'调用工具中…',editing:'文件更新成功！',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};say(map[next.state]||'嗨～')}
- current=next;player.setState(next.state,newEvent&&next.state==='done');preload(next.state);draw();});
+ let next=data.activity;const newEvent=next.at!==seenAt;if(newEvent){seenAt=next.at;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};say(next.detail||map[next.state]||'嗨～')}
+ current=next;player.setState(next.state,newEvent&&(next.state==='done'||next.phase==='start'));preload(player.sample(reduced.matches).name);draw();});
 setInterval(draw,500);vscode.postMessage({type:'ready'});
 </script></body></html>`;
 }
@@ -326,6 +334,9 @@ function activate(context) {
   register('sleep', ()=>writeActivity('sleep'));
   register('tool', ()=>writeActivity('tool'));
   register('editing', ()=>writeActivity('editing'));
+  register('reportActivity', event => {
+    if (event && STATES.has(event.state)) writeActivity(event.state, String(event.project || ''), event.detail || '', event.phase || '');
+  });
   register('installHooks', installHooks);
   register('installHooksAll', installHooksAll);
   register('removeHooks', removeHooks);

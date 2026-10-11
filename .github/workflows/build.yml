@@ -36,7 +36,7 @@ jobs:
           node --check src/extension.js
           node --check src/animation-player.js
           node --test test/*.test.js
-          python -m py_compile scripts/WhalePet.py scripts/animation_runtime.py build_vsix.py
+          python -m py_compile scripts/WhalePet.py scripts/animation_runtime.py scripts/dock_runtime.py scripts/status_signal.py build_vsix.py
           bash -n scripts/HookSignal.sh
       - name: Build VSIX
         run: |
