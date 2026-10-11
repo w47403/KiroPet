@@ -46,8 +46,11 @@ content_types = '''<?xml version="1.0" encoding="utf-8"?>
   <Override PartName="/extension.vsixmanifest" ContentType="text/xml" />
 </Types>
 '''
-files = ['package.json', 'src/extension.js', 'scripts/WhalePet.ps1', 'scripts/WhalePet.py', 'scripts/HookSignal.ps1', 'scripts/HookSignal.sh', 'assets/whale-girl.png', 'assets/icon.png', 'README.md', 'LICENSE']
+files = ['package.json', 'src/extension.js', 'src/animation-player.js', 'scripts/WhalePet.ps1', 'scripts/WhalePet.py', 'scripts/animation_runtime.py', 'scripts/HookSignal.ps1', 'scripts/HookSignal.sh', 'assets/whale-girl.png', 'assets/icon.png', 'README.md', 'LICENSE']
 files += [f'assets/moods/{name}.png' for name in ('idle','happy','hug','sleep','done')]
+files += [str(file.relative_to(ROOT)).replace('\\', '/') for file in (ROOT / 'assets' / 'animations').rglob('*')
+          if file.is_file() and 'source' not in file.relative_to(ROOT / 'assets' / 'animations').parts
+          and file.suffix in ('.json', '.png')]
 with ZipFile(out, 'w', ZIP_DEFLATED, compresslevel=7) as z:
     z.writestr('extension.vsixmanifest', manifest)
     z.writestr('[Content_Types].xml', content_types)

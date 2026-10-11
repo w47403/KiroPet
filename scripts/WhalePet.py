@@ -2,12 +2,12 @@
 """Optional macOS / Linux desktop window. Uses Python 3 + Tk (no pip dependencies)."""
 import argparse
 import json
-import math
 import os
 import random
 import sys
 import time
 import tkinter as tk
+from animation_runtime import frame_at
 
 p = argparse.ArgumentParser()
 p.add_argument('--image', required=True)
@@ -33,20 +33,26 @@ try:
 except tk.TclError:
     pass
 
-# Tk Image supports PNG natively. Size is limited by integer PhotoImage zoom/subsample.
-raw = tk.PhotoImage(file=a.image)
-ratio = max(raw.width() / size, raw.height() / (size * 1.12))
-sub = max(1, round(ratio))
-photo = raw.subsample(sub, sub)
-mood_photos = {'idle': photo}
-for mood in ('happy', 'hug', 'sleep', 'done'):
-    try:
-        filename = os.path.join(os.path.dirname(a.image), 'moods', mood + '.png')
-        value = tk.PhotoImage(file=filename)
-        subfactor = max(1, round(max(value.width(), value.height()) / max(size, 100)))
-        mood_photos[mood] = value.subsample(subfactor, subfactor)
-    except (OSError, tk.TclError):
-        pass
+animation_dir = os.path.join(os.path.dirname(a.image), 'animations')
+with open(os.path.join(animation_dir, 'manifest.json'), encoding='utf-8') as file:
+    manifest = json.load(file)
+frame_cache = {}
+
+def frames_for(name):
+    if name not in frame_cache:
+        frames = []
+        for relative in manifest['clips'][name]['frames']:
+            # Pre-sized PNGs keep native Tk dependency-free and avoid integer zoom artifacts.
+            filename = os.path.join(animation_dir, 'tk', str(size), relative)
+            if not os.path.isfile(filename):
+                filename = os.path.join(animation_dir, relative)
+            raw = tk.PhotoImage(file=filename)
+            factor = max(1, round(max(raw.width(), raw.height()) / size))
+            frames.append(raw.subsample(factor, factor))
+        frame_cache[name] = frames
+    return frame_cache[name]
+
+photo = frames_for('idle')[0]
 W, H = max(size, photo.width() + 18), photo.height() + 48
 screenw, screenh = root.winfo_screenwidth(), root.winfo_screenheight()
 x, y = screenw-W-32, screenh-H-95
@@ -60,6 +66,9 @@ state = 'idle'
 last_state = None
 bubble_end = 0.0
 start_time = time.monotonic()
+clip_start = start_time
+reaction_start = None
+last_frame = None
 drag = None
 mute = False
 
@@ -78,8 +87,11 @@ def move(e):
         dx, dy = e.x_root-drag[0], e.y_root-drag[1]
         root.geometry(f'+{drag[2]+dx}+{drag[3]+dy}')
 def release(e):
+    global drag, reaction_start
     if drag and abs(e.x_root-drag[0]) + abs(e.y_root-drag[1]) < 8:
+        reaction_start = time.monotonic()
         say(random.choice(phrases))
+    drag = None
 
 def menu(e):
     try: popup.tk_popup(e.x_root, e.y_root)
@@ -100,8 +112,8 @@ def parent_alive(pid):
     except ProcessLookupError: return False
     except PermissionError: return True
 
-def animate():
-    global state, last_state
+def monitor():
+    global state, last_state, clip_start, reaction_start
     if not parent_alive(a.parent): close(); return
     try:
         with open(a.state, encoding='utf-8') as f:
@@ -109,20 +121,33 @@ def animate():
         current = (payload.get('state', 'idle'), payload.get('at'))
         if current != last_state:
             last_state = current
-            state = current[0]
+            next_state = current[0] if current[0] in manifest['clips'] else 'idle'
+            if next_state != state or next_state == 'done':
+                state = next_state
+                clip_start = time.monotonic()
+                reaction_start = None
             msg = {'working':'Kiro 正在处理…', 'tool':'Kiro 正在调用工具…',
-                   'editing':'Kiro 更新了文件～', 'done':'任务完成啦！', 'idle':'休息一会儿～'}.get(state)
+                   'editing':'Kiro 更新了文件～', 'done':'任务完成啦！', 'idle':'休息一会儿～', 'sleep':'呼噜呼噜～'}.get(state)
             if msg: say(msg, 2)
-            art = {'working':'happy','tool':'hug','editing':'happy','done':'done'}.get(state,'idle')
-            canvas.itemconfigure(img, image=mood_photos.get(art, photo))
     except (OSError, ValueError, TypeError):
         pass
-    t = time.monotonic() - start_time
-    sway = math.sin(t*1.5) * (3 if state == 'working' else 2)
-    canvas.coords(img, W//2, H//2+13 + sway)
+    root.after(700, monitor)
+
+def animate():
+    global reaction_start, last_frame
+    now = time.monotonic()
+    if reaction_start is not None and (now - reaction_start) * 1000 >= sum(manifest['clips']['hug']['durations']):
+        reaction_start = None
+    name = 'hug' if reaction_start is not None else state
+    elapsed = (now - (reaction_start if reaction_start is not None else clip_start)) * 1000
+    index = frame_at(manifest['clips'][name], elapsed)
+    if root.winfo_viewable() and (name, index) != last_frame:
+        canvas.itemconfigure(img, image=frames_for(name)[index])
+        last_frame = (name, index)
     if time.monotonic() >= bubble_end: canvas.itemconfigure(text_id, text='')
-    root.after(100, animate)
+    root.after(80, animate)
 
 say('嗨～一起写代码吧！')
 root.after(150, animate)
+root.after(100, monitor)
 root.mainloop()

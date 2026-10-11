@@ -1,8 +1,9 @@
 {
   "name": "kiro-whale-pet",
   "displayName": "KiroPet · 鲸鱼娘 AI 桌宠",
-  "description": "Kiro AI 桌宠：鲸鱼娘多表情互动、跨平台面板与桌面悬浮、Agent 工作状态提醒。",
-  "version": "0.3.1",
+  "description": "Kiro AI 桌宠：二头身鲸鱼娘逐帧动画、七种状态动作、跨平台面板与桌面悬浮。",
+  "version": "0.4.0",
+  "scripts": {"test": "node --test test/*.test.js"},
   "publisher": "local-whale-pet",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -57,6 +58,9 @@
         "command": "kiroWhalePet.idle",
         "title": "鲸鱼娘：待机状态"
       },
+      {"command": "kiroWhalePet.tool", "title": "鲸鱼娘：工具状态"},
+      {"command": "kiroWhalePet.editing", "title": "鲸鱼娘：修改文件状态"},
+      {"command": "kiroWhalePet.sleep", "title": "鲸鱼娘：休息状态"},
       {
         "command": "kiroWhalePet.installHooks",
         "title": "鲸鱼娘：为当前项目安装 Agent Hooks"

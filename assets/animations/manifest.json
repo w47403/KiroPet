@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "frameSize": [
+    256,
+    342
+  ],
+  "clips": {
+    "idle": {
+      "frames": [
+        "idle/00.png",
+        "idle/01.png",
+        "idle/02.png",
+        "idle/03.png",
+        "idle/04.png",
+        "idle/05.png",
+        "idle/06.png",
+        "idle/07.png"
+      ],
+      "durations": [
+        640,
+        160,
+        160,
+        160,
+        160,
+        320,
+        160,
+        240
+      ],
+      "loop": true
+    },
+    "working": {
+      "frames": [
+        "working/00.png",
+        "working/01.png",
+        "working/02.png",
+        "working/03.png",
+        "working/04.png",
+        "working/05.png",
+        "working/06.png",
+        "working/07.png"
+      ],
+      "durations": [
+        240,
+        160,
+        240,
+        160,
+        160,
+        240,
+        160,
+        240
+      ],
+      "loop": true
+    },
+    "tool": {
+      "frames": [
+        "tool/00.png",
+        "tool/01.png",
+        "tool/02.png",
+        "tool/03.png",
+        "tool/04.png",
+        "tool/05.png",
+        "tool/06.png",
+        "tool/07.png"
+      ],
+      "durations": [
+        240,
+        160,
+        160,
+        160,
+        240,
+        240,
+        160,
+        240
+      ],
+      "loop": true
+    },
+    "editing": {
+      "frames": [
+        "editing/00.png",
+        "editing/01.png",
+        "editing/02.png",
+        "editing/03.png",
+        "editing/04.png",
+        "editing/05.png",
+        "editing/06.png",
+        "editing/07.png"
+      ],
+      "durations": [
+        160,
+        160,
+        160,
+        160,
+        160,
+        160,
+        160,
+        160
+      ],
+      "loop": true
+    },
+    "done": {
+      "frames": [
+        "done/00.png",
+        "done/01.png",
+        "done/02.png",
+        "done/03.png",
+        "done/04.png",
+        "done/05.png",
+        "done/06.png",
+        "done/07.png"
+      ],
+      "durations": [
+        160,
+        160,
+        160,
+        240,
+        160,
+        160,
+        240,
+        640
+      ],
+      "loop": false
+    },
+    "hug": {
+      "frames": [
+        "hug/00.png",
+        "hug/01.png",
+        "hug/02.png",
+        "hug/03.png",
+        "hug/04.png",
+        "hug/05.png",
+        "hug/06.png",
+        "hug/07.png"
+      ],
+      "durations": [
+        240,
+        240,
+        240,
+        240,
+        240,
+        240,
+        240,
+        320
+      ],
+      "loop": false
+    },
+    "sleep": {
+      "frames": [
+        "sleep/00.png",
+        "sleep/01.png",
+        "sleep/02.png",
+        "sleep/03.png",
+        "sleep/04.png",
+        "sleep/05.png",
+        "sleep/06.png",
+        "sleep/07.png"
+      ],
+      "durations": [
+        400,
+        240,
+        240,
+        400,
+        240,
+        240,
+        240,
+        400
+      ],
+      "loop": true
+    }
+  }
+}
