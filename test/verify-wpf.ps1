@@ -38,19 +38,15 @@ if (-not $script:dockSide -or $script:dockX -ne -1920 -or $script:dockY -ne 0) {
 Move-Smooth $script:dockX $script:dockY $true
 Fold-Dock
 if (-not $script:folded -or $script:dockTab.Visibility -ne 'Visible') { throw 'Dock tab failed' }
-function Pump-UI([int]$ms) {
-  $script:testFrame = New-Object System.Windows.Threading.DispatcherFrame
-  $pump = New-Object System.Windows.Threading.DispatcherTimer
-  $pump.Interval = [TimeSpan]::FromMilliseconds($ms)
-  $pump.Add_Tick({ $script:testFrame.Continue=$false })
-  $pump.Start()
-  [System.Windows.Threading.Dispatcher]::PushFrame($script:testFrame)
-  $pump.Stop()
+# Seek the exact clocks applied to Window.Left/Top. CI has no reliable render cadence.
+foreach ($clock in $script:motionClocks) {
+  $clock.Controller.SeekAlignedToLastTick([TimeSpan]::FromMilliseconds(100),[System.Windows.Media.Animation.TimeSeekOrigin]::BeginTime)
 }
-Pump-UI 100
 $middle=$script:window.Left
 if ($middle -ge -1920 -or $middle -le (-1920-$script:window.Width+26)) { throw "No intermediate animation position: $middle" }
-Pump-UI 300
+foreach ($clock in $script:motionClocks) {
+  $clock.Controller.SeekAlignedToLastTick([TimeSpan]::FromMilliseconds(400),[System.Windows.Media.Animation.TimeSeekOrigin]::BeginTime)
+}
 if ([Math]::Abs($script:window.Left-(-1920-$script:window.Width+26)) -gt 1) { throw 'Hide animation did not settle' }
 Expand-Dock $true
 if ($script:folded -or $script:window.Left -ne -1920 -or $script:window.Top -ne 0) { throw 'Dock reveal failed' }

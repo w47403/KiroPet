@@ -2,7 +2,7 @@
   "name": "kiro-whale-pet",
   "displayName": "KiroPet · 鲸鱼娘 AI 桌宠",
   "description": "鲸鱼娘 AI 桌宠：安静待机与多姿势逐帧动画、实时工作提示、平滑边缘吸附收起。",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "scripts": {"test": "node --test test/*.test.js"},
   "publisher": "local-whale-pet",
   "license": "MIT",

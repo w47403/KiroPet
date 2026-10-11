@@ -1,4 +1,6 @@
-# 🐋 KiroPet · Kiro AI 桌宠 v0.5.0
+# 🐋 KiroPet · Kiro AI 桌宠 v0.5.1
+
+v0.5.1 保持 WPF 吸附动画的最终位置，并对应用的真实动画时钟做精确寻址验证，避免云端绘制节奏导致测试偶发失败；发布构建等待 Windows 检查通过后才执行。
 
 ## v0.5.0 多姿势、安静待机与边缘收起
 
@@ -44,7 +46,7 @@ Kiro/VS Code 兼容插件，不消耗模型积分，不读取聊天/思考内容
 ## 📦 更新安装
 
 1. 打开 Kiro IDE；按 `Ctrl+Shift+P`（macOS 用 `Cmd+Shift+P`）。
-2. 运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.5.0.vsix`。
+2. 运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.5.1.vsix`。
 3. 如果之前装过 v0.1.0，会以相同的 publisher + name 更新；安装后 **Developer: Reload Window**。
 4. 在屏幕右下角找鲸鱼娘；点击 Kiro 底部状态栏的 `鲸鱼娘` 进入控制菜单。
 

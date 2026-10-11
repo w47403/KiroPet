@@ -172,6 +172,7 @@ function Move-Smooth([double]$x, [double]$y, [bool]$immediate = $false) {
   $fromX = $script:window.Left; $fromY = $script:window.Top
   $script:window.BeginAnimation([System.Windows.Window]::LeftProperty,$null)
   $script:window.BeginAnimation([System.Windows.Window]::TopProperty,$null)
+  $script:motionClocks = @()
   $script:window.Left = $x; $script:window.Top = $y
   if ($immediate) { return }
   $ease = New-Object System.Windows.Media.Animation.CubicEase
@@ -181,8 +182,12 @@ function Move-Smooth([double]$x, [double]$y, [bool]$immediate = $false) {
     $animation.From = $axis[1]; $animation.To = $axis[2]
     $animation.Duration = [TimeSpan]::FromMilliseconds(340)
     $animation.EasingFunction = $ease
-    $animation.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop
-    $script:window.BeginAnimation($axis[0],$animation)
+    # Window location notifications can update the base value while it moves.
+    # Hold the actual destination until the next move explicitly replaces this clock.
+    $animation.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::HoldEnd
+    $clock = $animation.CreateClock($true)
+    $script:motionClocks += $clock
+    $script:window.ApplyAnimationClock($axis[0],$clock)
   }
 }
 function Expand-Dock([bool]$immediate = $false) {

@@ -19,6 +19,7 @@ jobs:
         shell: powershell
         run: powershell.exe -NoProfile -STA -File test/verify-wpf.ps1
   build:
+    needs: verify-wpf
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
