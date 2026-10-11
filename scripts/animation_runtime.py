@@ -2,6 +2,31 @@
 import random
 
 
+class DragDirector:
+    """Loop the held-collar pose while freezing the underlying task/idle clock."""
+    def __init__(self, manifest):
+        self.manifest = manifest
+        self.started = None
+        self.offset = 0
+
+    def begin(self, now_ms):
+        if self.started is None:
+            self.started = now_ms
+
+    def end(self, now_ms):
+        if self.started is not None:
+            self.offset += now_ms-self.started
+            self.started = None
+
+    def timeline(self, now_ms):
+        return (self.started if self.started is not None else now_ms)-self.offset
+
+    def sample(self, now_ms):
+        if self.started is None:
+            return None
+        return 'drag', frame_at(self.manifest['clips']['drag'],now_ms-self.started)
+
+
 class IdleDirector:
     """Play an occasional one-shot, then quietly hold its resting pose."""
     def __init__(self, manifest, now_ms=0, rng=None):

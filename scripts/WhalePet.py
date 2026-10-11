@@ -7,7 +7,7 @@ import random
 import sys
 import time
 import tkinter as tk
-from animation_runtime import frame_at, IdleDirector, WorkDirector
+from animation_runtime import frame_at, IdleDirector, WorkDirector, DragDirector
 from dock_runtime import snap, hidden_position, ease_out
 
 p = argparse.ArgumentParser()
@@ -71,6 +71,8 @@ clip_start = start_time
 reaction_start = None
 idle = IdleDirector(manifest, start_time*1000)
 work = WorkDirector(manifest)
+interaction = DragDirector(manifest)
+def animation_now(): return interaction.timeline(time.monotonic()*1000)/1000
 activity_detail = ''
 last_frame = None
 drag = None
@@ -149,14 +151,19 @@ def click(e):
     unfold()
     if motion_job is not None: root.after_cancel(motion_job); motion_job=None
     drag = (e.x_root, e.y_root, root.winfo_x(), root.winfo_y())
+    canvas.grab_set()
 def move(e):
     if drag:
         dx, dy = e.x_root-drag[0], e.y_root-drag[1]
+        if interaction.started is None and abs(dx)+abs(dy)<8: return
+        interaction.begin(time.monotonic()*1000)
         position(drag[2]+dx,drag[3]+dy)
 def release(e):
     global drag, reaction_start, dock_edge, dock_position
-    if drag and abs(e.x_root-drag[0]) + abs(e.y_root-drag[1]) < 8:
-        reaction_start = time.monotonic()
+    moved = interaction.started is not None
+    interaction.end(time.monotonic()*1000)
+    if drag and not moved:
+        reaction_start = animation_now()
         say(random.choice(phrases))
     elif drag:
         result = snap(root.winfo_x(),root.winfo_y(),W,H,(0,0,screenw,screenh)) if dock_enabled else None
@@ -165,6 +172,14 @@ def release(e):
             dock_position = result[1:]
             smooth_to(*dock_position); schedule_hide()
     drag = None
+    canvas.grab_release()
+
+def cancel_drag(_=None):
+    global drag
+    interaction.end(time.monotonic()*1000)
+    drag = None
+    canvas.grab_release()
+    schedule_hide()
 
 def menu(e):
     global popup_open
@@ -184,6 +199,7 @@ popup.add_command(label='退出桌宠（可在 Kiro 中重开）', command=close
 canvas.bind('<ButtonPress-1>', click)
 canvas.bind('<B1-Motion>', move)
 canvas.bind('<ButtonRelease-1>', release)
+root.bind('<Escape>',cancel_drag)
 canvas.bind('<Button-3>', menu)
 canvas.bind('<Button-2>', menu)
 canvas.bind('<Enter>',unfold)
@@ -207,11 +223,11 @@ def monitor():
             next_state = current[0] if current[0] in manifest['clips'] else 'idle'
             restart = payload.get('phase')=='start'
             if next_state != state or next_state == 'done' or restart:
-                work.set_state(state,next_state,time.monotonic()*1000,restart)
+                work.set_state(state,next_state,animation_now()*1000,restart)
                 state = next_state
-                clip_start = time.monotonic()
+                clip_start = animation_now()
                 reaction_start = None
-                idle.reset(time.monotonic()*1000)
+                idle.reset(animation_now()*1000)
             activity_detail = str(payload.get('detail') or '')[:160]
             msg = {'working':'Kiro 正在处理…', 'tool':'Kiro 正在调用工具…',
                    'editing':'Kiro 更新了文件～', 'done':'任务完成啦！', 'idle':'休息一会儿～', 'sleep':'呼噜呼噜～'}.get(state)
@@ -222,7 +238,8 @@ def monitor():
 
 def animate():
     global reaction_start, last_frame
-    now = time.monotonic()
+    wall = time.monotonic()
+    now = animation_now()
     if folded:
         root.after(250, animate)
         return
@@ -231,12 +248,14 @@ def animate():
     name = 'hug' if reaction_start is not None else state
     elapsed = (now - (reaction_start if reaction_start is not None else clip_start)) * 1000
     index = frame_at(manifest['clips'][name], elapsed)
-    if state == 'idle' and reaction_start is None: name, index = idle.sample(now*1000)
+    held = interaction.sample(wall*1000)
+    if held is not None: name,index = held
+    elif state == 'idle' and reaction_start is None: name, index = idle.sample(now*1000)
     elif state in ('working','tool','editing') and reaction_start is None: name,index = work.sample(state,now*1000)
     if root.winfo_viewable() and (name, index) != last_frame:
         canvas.itemconfigure(img, image=frames_for(name)[index])
         last_frame = (name, index)
-    if now >= bubble_end:
+    if wall >= bubble_end:
         canvas.itemconfigure(text_id, text=(activity_detail or {'working':'正在处理你的请求','tool':'正在调用工具','editing':'正在更新文件'}.get(state,'')) if state in ('working','tool','editing') and not mute else '')
     root.after(80, animate)
 

@@ -24,6 +24,12 @@ $script:idleName = 'idle'
 $script:idleStarted = $null
 $script:idleNext = [DateTime]::UtcNow.AddSeconds(22)
 $script:tick = 0
+$script:animationOffset = [TimeSpan]::Zero
+$script:dragStarted = $null
+function Get-AnimationTime {
+  $wall = if ($script:dragStarted) { $script:dragStarted } else { [DateTime]::UtcNow }
+  return $wall - $script:animationOffset
+}
 $script:phrases = @('在呢～', '摸摸头，继续加油！', '今天也要写出漂亮的代码～', '呼噜呼噜～', '一起摸鱼五秒钟？', '你写代码，我负责卖萌！')
 
 $script:window = New-Object System.Windows.Window
@@ -73,7 +79,7 @@ function Switch-Art([string]$name, [bool]$Restart = $false) {
   if ($name -eq 'happy') { $name = 'working' }
   if ($null -eq $script:manifest.clips.PSObject.Properties[$name]) { $name = 'idle' }
   if ($name -in @('working','tool','editing') -and -not $script:taskActive) {
-    $script:taskActive=$true; $script:taskStart=[DateTime]::UtcNow; $script:workAccentStart=$null
+    $script:taskActive=$true; $script:taskStart=Get-AnimationTime; $script:workAccentStart=$null
     $length=($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
     $script:workNext=$script:taskStart.AddMilliseconds($length+18000)
   } elseif ($name -in @('idle','sleep','done')) {
@@ -92,8 +98,9 @@ function Switch-Art([string]$name, [bool]$Restart = $false) {
     }
     $script:frameCache[$name] = $frames
   }
+  if ($name -eq 'done' -and ($Restart -or $script:clipName -ne 'drag')) { $script:doneStarted=Get-AnimationTime }
   $script:clipName = $name
-  $script:clipStart = [DateTime]::UtcNow
+  $script:clipStart = Get-AnimationTime
   $script:lastFrameIndex = -1
   $script:picture.Source = $script:frameCache[$name][0]
 }
@@ -259,7 +266,7 @@ Add-MenuItem $menu '📝 修改文件' { $script:activityDetail=''; $script:reac
 Add-MenuItem $menu '✨ 完成啦' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'done'; Switch-Art 'done' $true; Say '任务完成！辛苦啦～' }
 Add-MenuItem $menu '💤 休息一下' {
   $script:activityDetail=''; $script:reactionUntil=$null; $script:mood='idle'; $script:idleName='idle'; $script:idleStarted=$null
-  $script:idleNext=[DateTime]::UtcNow.AddSeconds(22); Switch-Art 'idle' $true; Say '休息一会儿也不错～'
+  $script:idleNext=(Get-AnimationTime).AddSeconds(22); Switch-Art 'idle' $true; Say '休息一会儿也不错～'
 }
 Add-MenuItem $menu '🌙 打个盹' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'sleep'; Switch-Art 'sleep'; Say '呼噜呼噜～' }
 [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
@@ -288,18 +295,54 @@ $script:picture.Add_MouseLeftButtonDown({
     $event.Handled = $true
     return
   }
-  $before = [System.Windows.Forms.Cursor]::Position
   Expand-Dock $true
   Move-Smooth $script:window.Left $script:window.Top $true
-  $script:dragging = $true
-  try { $script:window.DragMove() } catch { }
-  $script:dragging = $false
-  $after = [System.Windows.Forms.Cursor]::Position
-  $d = [Math]::Abs($before.X - $after.X) + [Math]::Abs($before.Y - $after.Y)
-  if ($d -lt 8) { Switch-Art 'hug'; $script:reactionUntil = [DateTime]::UtcNow.AddSeconds(2); Say $script:phrases[(Get-Random -Maximum $script:phrases.Count)] }
-  else { Snap-Dock }
+  $script:pressPoint = [System.Windows.Forms.Cursor]::Position
+  $script:pressLeft = $script:window.Left; $script:pressTop = $script:window.Top
+  $source = [System.Windows.PresentationSource]::FromVisual($script:window)
+  $script:pressMatrix = $source.CompositionTarget.TransformFromDevice
+  [void]$script:picture.CaptureMouse()
   $event.Handled = $true
 })
+
+function Begin-PetDrag {
+  if ($script:dragging) { return }
+  $script:dragging=$true; $script:dragStarted=[DateTime]::UtcNow
+  $script:reactionUntil=$null
+  $script:picture.Cursor=[System.Windows.Input.Cursors]::SizeAll
+  Switch-Art 'drag' $true
+}
+function End-PetDrag {
+  if (-not $script:dragging) { return }
+  $script:animationOffset += [DateTime]::UtcNow-$script:dragStarted
+  $script:dragStarted=$null; $script:dragging=$false
+  $script:picture.Cursor=[System.Windows.Input.Cursors]::Hand
+  Switch-Art $script:mood
+}
+function Finish-PetPress([bool]$Canceled = $false) {
+  if ($null -eq $script:pressPoint) { return }
+  $moved=$script:dragging
+  End-PetDrag
+  $script:pressPoint=$null
+  $script:picture.ReleaseMouseCapture()
+  if ($moved) { Snap-Dock
+  } elseif (-not $Canceled) {
+    Switch-Art 'hug'; $script:reactionUntil = [DateTime]::UtcNow.AddSeconds(2)
+    Say $script:phrases[(Get-Random -Maximum $script:phrases.Count)]
+  }
+}
+$script:picture.Add_MouseMove({
+  if ($null -eq $script:pressPoint) { return }
+  if ([System.Windows.Input.Mouse]::LeftButton -ne [System.Windows.Input.MouseButtonState]::Pressed) { Finish-PetPress $true; return }
+  $cursor=[System.Windows.Forms.Cursor]::Position
+  $dx=$cursor.X-$script:pressPoint.X; $dy=$cursor.Y-$script:pressPoint.Y
+  if (-not $script:dragging -and ([Math]::Abs($dx)+[Math]::Abs($dy)) -lt 8) { return }
+  Begin-PetDrag
+  $delta=$script:pressMatrix.Transform([System.Windows.Vector]::new($dx,$dy))
+  $script:window.Left=$script:pressLeft+$delta.X; $script:window.Top=$script:pressTop+$delta.Y
+})
+$script:picture.Add_MouseLeftButtonUp({ param($sender,$event) Finish-PetPress; $event.Handled=$true })
+$script:picture.Add_LostMouseCapture({ Finish-PetPress $true })
 
 # Polls the text token written by the extension or optional Kiro Agent Hooks.
 $script:monitor = New-Object System.Windows.Threading.DispatcherTimer
@@ -331,7 +374,7 @@ $script:monitor.Add_Tick({
         $script:lastEventKey = $eventKey
         $script:lastState = $next
         if ($next -eq 'idle' -and $script:mood -ne 'idle') {
-          $script:idleName='idle'; $script:idleStarted=$null; $script:idleNext=[DateTime]::UtcNow.AddSeconds(22)
+          $script:idleName='idle'; $script:idleStarted=$null; $script:idleNext=(Get-AnimationTime).AddSeconds(22)
         }
         $projectHint = if ($project) { "[$project] " } else { '' }
         switch ($next) {
@@ -363,44 +406,48 @@ function Update-Animation {
     $script:reactionUntil = $null
     Switch-Art $script:mood
   }
-  $quiet = $script:mood -eq 'idle' -and -not $script:reactionUntil
-  $working = $script:mood -in @('working','tool','editing') -and -not $script:reactionUntil
+  $now=Get-AnimationTime
+  if ($script:dragging) { Switch-Art 'drag' }
+  $quiet = $script:mood -eq 'idle' -and -not $script:reactionUntil -and -not $script:dragging
+  $working = $script:mood -in @('working','tool','editing') -and -not $script:reactionUntil -and -not $script:dragging
   $workElapsed = 0
   $introLength = ($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
   if ($working) {
-    $workElapsed=([DateTime]::UtcNow-$script:taskStart).TotalMilliseconds
+    $workElapsed=($now-$script:taskStart).TotalMilliseconds
     if ($workElapsed -lt $introLength) { Switch-Art 'work_start'
     } else {
       $accentLength=($script:manifest.clips.work_pause.durations | Measure-Object -Sum).Sum
-      if ($script:workAccentStart -and ([DateTime]::UtcNow-$script:workAccentStart).TotalMilliseconds -ge $accentLength) { $script:workAccentStart=$null }
-      if ($script:mood -ne 'tool' -and -not $script:workAccentStart -and [DateTime]::UtcNow -ge $script:workNext -and $accentLength -gt 0) {
-        $script:workAccentStart=[DateTime]::UtcNow
-        $script:workNext=[DateTime]::UtcNow.AddMilliseconds($accentLength+(Get-Random -Minimum 18000 -Maximum 35001))
+      if ($script:workAccentStart -and ($now-$script:workAccentStart).TotalMilliseconds -ge $accentLength) { $script:workAccentStart=$null }
+      if ($script:mood -ne 'tool' -and -not $script:workAccentStart -and $now -ge $script:workNext -and $accentLength -gt 0) {
+        $script:workAccentStart=$now
+        $script:workNext=$now.AddMilliseconds($accentLength+(Get-Random -Minimum 18000 -Maximum 35001))
       }
       if (($script:mood -eq 'tool' -or $script:workAccentStart) -and $accentLength -gt 0) { Switch-Art 'work_pause'
       } else { Switch-Art $script:mood }
     }
   }
   if ($quiet) {
-    if ([DateTime]::UtcNow -ge $script:idleNext) {
+    if ($now -ge $script:idleNext) {
       $names = @($script:manifest.idleBehavior.clips | Where-Object { $_ -ne $script:idleName })
       $script:idleName = $names[(Get-Random -Maximum $names.Count)]
       Switch-Art $script:idleName $true
-      $script:idleStarted = [DateTime]::UtcNow
+      $script:idleStarted = $now
       $length = ($script:manifest.clips.($script:idleName).durations | Measure-Object -Sum).Sum
-      $script:idleNext = [DateTime]::UtcNow.AddMilliseconds($length + (Get-Random -Minimum 18000 -Maximum 45001))
+      $script:idleNext = $now.AddMilliseconds($length + (Get-Random -Minimum 18000 -Maximum 45001))
     } elseif ($script:clipName -ne $script:idleName) { Switch-Art $script:idleName }
   }
   $clip = $script:manifest.clips.($script:clipName)
   $total = 0
   foreach ($duration in $clip.durations) { $total += $duration }
-  $elapsed = ([DateTime]::UtcNow - $script:clipStart).TotalMilliseconds
+  $elapsed = ($now - $script:clipStart).TotalMilliseconds
+  if ($script:clipName -eq 'done' -and $script:doneStarted) { $elapsed=($now-$script:doneStarted).TotalMilliseconds }
+  if ($script:dragging) { $elapsed=([DateTime]::UtcNow-$script:dragStarted).TotalMilliseconds }
   if ($working) {
     $elapsed = if ($script:clipName -eq 'work_start') { $workElapsed
-    } elseif ($script:workAccentStart -and $script:mood -ne 'tool') { ([DateTime]::UtcNow-$script:workAccentStart).TotalMilliseconds
+    } elseif ($script:workAccentStart -and $script:mood -ne 'tool') { ($now-$script:workAccentStart).TotalMilliseconds
     } else { $workElapsed-$introLength }
   }
-  if ($quiet -and $script:idleStarted) { $elapsed = ([DateTime]::UtcNow-$script:idleStarted).TotalMilliseconds }
+  if ($quiet -and $script:idleStarted) { $elapsed = ($now-$script:idleStarted).TotalMilliseconds }
   if (($clip.loop -or ($working -and $script:mood -eq 'tool' -and $script:clipName -eq 'work_pause')) -and -not $quiet) { $elapsed = $elapsed % $total }
   if ($quiet -and -not $script:idleStarted) { $elapsed = 0 }
   $index = $clip.frames.Count - 1

@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'assets/animations/manifest.json')));
 
 test('every state has eight assets and valid frame timings', () => {
-  assert.deepEqual(Object.keys(manifest.clips).sort(), ['done', 'editing', 'hug', 'idle', 'nap', 'sit', 'sleep', 'stretch', 'tool', 'walk', 'work_pause', 'work_start', 'working']);
+  assert.deepEqual(Object.keys(manifest.clips).sort(), ['done', 'drag', 'editing', 'hug', 'idle', 'nap', 'rice_full', 'rice_hug', 'rice_scoop', 'sit', 'sleep', 'stretch', 'tool', 'walk', 'work_pause', 'work_start', 'working']);
   for (const clip of Object.values(manifest.clips)) {
     assert.equal(clip.frames.length, 8);
     assert.equal(clip.durations.length, 8);
@@ -122,6 +122,35 @@ test('task setup survives tool events, loops with breaks, and completion interru
 });
 
 function sum(values){return values.reduce((a,b)=>a+b,0);}
+
+test('collar drag loops while task time freezes; new work events resume on release', () => {
+  let now=0;
+  const player=new AnimationPlayer(manifest,()=>now,()=>0);
+  player.setState('working');now=2000;
+  const pose=player.sample();player.beginDrag();
+  assert.equal(player.sample().name,'drag');
+  now+=160;assert.equal(player.sample().index,1);
+  now+=sum(manifest.clips.drag.durations);assert.equal(player.sample().index,1);
+  player.endDrag();assert.deepEqual(player.sample(),pose);
+  player.beginDrag();now+=20000;player.setState('done',true);
+  assert.equal(player.sample().name,'drag');
+  player.endDrag();assert.deepEqual([player.sample().name,player.sample().index],['done',0]);
+  player.beginDrag();player.pause();now+=40000;player.resume();
+  player.endDrag();assert.equal(player.sample().index,0);
+});
+
+test('each rice animation is selectable, finishes once, and holds its quiet rest', () => {
+  for(const name of ['rice_scoop','rice_hug','rice_full']){
+    let now=0;
+    const candidates=manifest.idleBehavior.clips.filter(n=>n!=='idle');
+    const choice=(candidates.indexOf(name)+.1)/candidates.length;
+    const player=new AnimationPlayer(manifest,()=>now,()=>choice);
+    now=22000;assert.equal(player.sample().name,name);
+    now+=sum(manifest.clips[name].durations)+100;
+    assert.deepEqual([player.sample().name,player.sample().index],[name,7]);
+    now+=5000;assert.equal(player.sample().index,7);
+  }
+});
 
 test('webview uses frame player and its emitted inline script parses', () => {
   const code = fs.readFileSync(path.join(root, 'src/extension.js'), 'utf8');

@@ -8,12 +8,30 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
-from animation_runtime import IdleDirector, WorkDirector
+from animation_runtime import IdleDirector, WorkDirector, DragDirector
 from dock_runtime import snap, hidden_position, ease_out
 from status_signal import activity
 
 
 class BehaviorTest(unittest.TestCase):
+    def test_drag_continues_loop_and_freezes_underlying_work_clock(self):
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        drag=DragDirector(manifest)
+        work=WorkDirector(manifest)
+        work.set_state('idle','working',0)
+        before=work.sample('working',2000)
+        drag.begin(2000)
+        self.assertEqual(drag.sample(2160),('drag',1))
+        self.assertEqual(drag.sample(2160+sum(manifest['clips']['drag']['durations'])),('drag',1))
+        self.assertEqual(work.sample('working',drag.timeline(30000)),before)
+        drag.end(30000)
+        self.assertIsNone(drag.sample(30000))
+        self.assertEqual(work.sample('working',drag.timeline(30000)),before)
+        drag.begin(31000);drag.begin(32000)
+        work.set_state('working','working',drag.timeline(33000),True)
+        drag.end(34000)
+        self.assertEqual(work.sample('working',drag.timeline(34000)),('work_start',0))
+
     def test_task_intro_continues_across_tools_and_work_break_is_one_shot(self):
         manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
         director=WorkDirector(manifest,random.Random(2))

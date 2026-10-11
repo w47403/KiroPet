@@ -22,6 +22,8 @@
       this.started = now();
       this.reaction = null;
       this.pausedAt = null;
+      this.suspensions = new Set();
+      this.dragStarted = null;
       this.random = random;
       this.idleName = 'idle';
       this.idleStart = null;
@@ -55,8 +57,23 @@
     react(name = 'hug') {
       if (this.manifest.clips[name]) this.reaction = {name, started: this.pausedAt === null ? this.now() : this.pausedAt};
     }
-    pause() { if (this.pausedAt === null) this.pausedAt = this.now(); }
-    resume() {
+    beginDrag() {
+      if (this.dragStarted !== null) return;
+      this.dragStarted = this.now();
+      this.pause('drag');
+    }
+    endDrag() {
+      if (this.dragStarted === null) return;
+      this.dragStarted = null;
+      this.resume('drag');
+    }
+    pause(reason = 'hidden') {
+      this.suspensions.add(reason);
+      if (this.pausedAt === null) this.pausedAt = this.now();
+    }
+    resume(reason = 'hidden') {
+      this.suspensions.delete(reason);
+      if (this.suspensions.size) return;
       if (this.pausedAt === null) return;
       const shift = this.now() - this.pausedAt;
       this.started += shift;
@@ -69,6 +86,11 @@
       this.pausedAt = null;
     }
     sample(reducedMotion = false) {
+      if (this.dragStarted !== null && this.manifest.clips.drag) {
+        const clip = this.manifest.clips.drag;
+        const index = reducedMotion ? 0 : frameAt(clip, this.now() - this.dragStarted);
+        return {name: 'drag', index, path: clip.frames[index]};
+      }
       const time = this.pausedAt === null ? this.now() : this.pausedAt;
       if (this.reaction) {
         const clip = this.manifest.clips[this.reaction.name];
