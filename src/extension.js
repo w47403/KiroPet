@@ -97,8 +97,8 @@ function spawnPet(command, args, onFail, isRetry = false) {
     return proc;
   } catch (err) { onFail(err.message); return null; }
 }
-function startDesktop() {
-  if (settings().get('desktopMode', 'auto') === 'panel') { openPanel(); return; }
+function startDesktop(forceDesktop = false) {
+  if (!forceDesktop && settings().get('desktopMode', 'auto') === 'panel') { openPanel(); return; }
   if (isRunning()) { vscode.window.showInformationMessage('鲸鱼娘已经在桌面上啦～'); return; }
   writeActivity('idle');
   lastDesktopError = '';
@@ -274,7 +274,7 @@ function openPanel() {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'ready': refresh(); break;
-      case 'showDesktop': startDesktop(); break;
+      case 'showDesktop': startDesktop(true); break;
       case 'hideDesktop': stopDesktop(); break;
       case 'installHooks': await installHooks(); break;
       case 'setState': if (STATES.has(msg.state)) writeActivity(msg.state); break;
@@ -286,7 +286,7 @@ function openPanel() {
 async function openMenu() {
   const autoStart = settings().get('autoStart', true);
   const choices = [
-    {label:'$(window) 显示桌面悬浮窗', fn:startDesktop},
+    {label:'$(window) 显示桌面悬浮窗', fn:()=>startDesktop(true)},
     {label:'$(preview) 打开 Kiro 内桌宠面板（所有系统）', fn:openPanel},
     {label:'$(close) 关闭桌面悬浮窗', fn:stopDesktop},
     {label:'$(sync) 工作中', fn:()=>writeActivity('working')},
@@ -309,7 +309,7 @@ function activate(context) {
   statusItem.command = P+'openMenu'; statusItem.show(); context.subscriptions.push(statusItem);
   const register=(name,fn)=>context.subscriptions.push(vscode.commands.registerCommand(P+name,fn));
   register('openMenu', openMenu);
-  register('show', startDesktop);
+  register('show', ()=>startDesktop(true));
   register('openPanel', openPanel);
   register('hide', stopDesktop);
   register('working', ()=>writeActivity('working'));
