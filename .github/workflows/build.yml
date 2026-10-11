@@ -34,6 +34,17 @@ jobs:
           python build_vsix.py
           mkdir -p dist
           mv ../kiro-whale-pet-*.vsix dist/
+      - name: Verify Windows PowerShell UTF-8 BOM in release package
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          package = next(Path('dist').glob('*.vsix'))
+          with ZipFile(package) as z:
+              for name in ('extension/scripts/WhalePet.ps1', 'extension/scripts/HookSignal.ps1'):
+                  assert z.read(name).startswith(b'\xef\xbb\xbf'), f'Missing UTF-8 BOM: {name}'
+          print('Windows PowerShell encoding checks passed')
+          PY
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
