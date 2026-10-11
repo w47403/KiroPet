@@ -1,4 +1,12 @@
-# 🐋 KiroPet · Kiro AI 桌宠 v0.3.0
+# 🐋 KiroPet · Kiro AI 桌宠 v0.3.1
+
+## v0.3.1 Windows 悬浮窗修复
+
+- 修复 v0.3.0 在 Windows PowerShell 5.1 下启动桌面悬浮窗时的中文编码解析错误：VSIX 打包时强制为 `.ps1` 文件写入 UTF-8 BOM。
+- 明确区分「显示桌面悬浮窗」与「打开 IDE 面板」：即使设置了 `desktopMode=panel`，用户手动点击显示桌面悬浮窗仍会优先启动系统浮窗。
+- Windows 桌面浮窗仍支持拖动、置顶、右键互动、小/中/大三档尺寸及关闭后重新打开。
+- 安装升级后请 **重新加载 Kiro 窗口**，然后运行命令 `鲸鱼娘：显示桌面悬浮窗`。
+
 
 > 非官方个人同人项目；与 DeepSeek、Kiro、OpenAI 无官方关联。所含鲸鱼主题立绘为专门生成的插画，不是 DeepSeek 官方角色模型或 Live2D 建模文件。
 
@@ -7,7 +15,7 @@ Kiro/VS Code 兼容插件，不消耗模型积分，不读取聊天/思考内容
 ## 📦 更新安装
 
 1. 打开 Kiro IDE；按 `Ctrl+Shift+P`（macOS 用 `Cmd+Shift+P`）。
-2. 运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.3.0.vsix`。
+2. 运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.3.1.vsix`。
 3. 如果之前装过 v0.1.0，会以相同的 publisher + name 更新；安装后 **Developer: Reload Window**。
 4. 在屏幕右下角找鲸鱼娘；点击 Kiro 底部状态栏的 `鲸鱼娘` 进入控制菜单。
 
