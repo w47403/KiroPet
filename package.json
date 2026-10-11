@@ -1,0 +1,109 @@
+{
+  "name": "kiro-whale-pet",
+  "displayName": "KiroPet · 鲸鱼娘 AI 桌宠",
+  "description": "Kiro AI 桌宠：鲸鱼娘多表情互动、跨平台面板与桌面悬浮、Agent 工作状态提醒。",
+  "version": "0.3.0",
+  "publisher": "local-whale-pet",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "Kiro",
+    "KiroPet",
+    "whale",
+    "desktop pet",
+    "agent status",
+    "桌宠"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "kiroWhalePet.openMenu",
+        "title": "鲸鱼娘：打开控制菜单"
+      },
+      {
+        "command": "kiroWhalePet.show",
+        "title": "鲸鱼娘：显示桌面悬浮窗"
+      },
+      {
+        "command": "kiroWhalePet.openPanel",
+        "title": "鲸鱼娘：打开 Kiro 内桌宠面板"
+      },
+      {
+        "command": "kiroWhalePet.hide",
+        "title": "鲸鱼娘：关闭桌面悬浮窗"
+      },
+      {
+        "command": "kiroWhalePet.working",
+        "title": "鲸鱼娘：工作状态"
+      },
+      {
+        "command": "kiroWhalePet.done",
+        "title": "鲸鱼娘：完成状态"
+      },
+      {
+        "command": "kiroWhalePet.idle",
+        "title": "鲸鱼娘：待机状态"
+      },
+      {
+        "command": "kiroWhalePet.installHooks",
+        "title": "鲸鱼娘：为当前项目安装 Agent Hooks"
+      },
+      {
+        "command": "kiroWhalePet.installHooksAll",
+        "title": "鲸鱼娘：为所有已打开项目安装 Agent Hooks"
+      },
+      {
+        "command": "kiroWhalePet.removeHooks",
+        "title": "鲸鱼娘：移除当前项目联动"
+      },
+      {
+        "command": "kiroWhalePet.toggleAutoStart",
+        "title": "鲸鱼娘：切换自动启动"
+      }
+    ],
+    "configuration": {
+      "title": "Kiro 鲸鱼娘桌宠",
+      "properties": {
+        "kiroWhalePet.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Kiro 启动后自动显示桌面悬浮窗；macOS/Linux 需安装 Python 3 与 Tk。"
+        },
+        "kiroWhalePet.size": {
+          "type": "number",
+          "default": 190,
+          "minimum": 100,
+          "maximum": 320,
+          "description": "桌面悬浮窗图片宽度（像素）。修改后重新打开生效。"
+        },
+        "kiroWhalePet.autoInstallHooksNewProjects": {
+          "type": "boolean",
+          "default": false,
+          "description": "已授权后，为随后新打开的本地工作区自动安装鲸鱼娘项目 Hook（默认关闭）。"
+        },
+        "kiroWhalePet.desktopMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "panel"
+          ],
+          "default": "auto",
+          "description": "auto: 启动系统悬浮窗（缺少桌面运行环境时退回 Kiro 面板）；panel: 只使用跨平台 Kiro 内面板。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+# Local editor files
+.vscode/
+.idea/
+*.code-workspace
+
+# Python caches and temporary files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+Thumbs.db
+
+# Generated VSIX distributions (GitHub Actions will upload these)
+*.vsix
+dist/
+build/
+
+# Local credentials and hook activity files
+.env
+.env.*
+!.env.example
+activity.json
+*.log
