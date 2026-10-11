@@ -2,7 +2,7 @@
   "name": "kiro-whale-pet",
   "displayName": "KiroPet · 鲸鱼娘 AI 桌宠",
   "description": "Kiro AI 桌宠：鲸鱼娘多表情互动、跨平台面板与桌面悬浮、Agent 工作状态提醒。",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "local-whale-pet",
   "license": "MIT",
   "icon": "assets/icon.png",
