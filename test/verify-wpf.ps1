@@ -73,9 +73,33 @@ Update-Animation
 if ($script:clipName -ne 'working') { throw 'Variation failed to return to work' }
 $script:mood='done'; Switch-Art 'done' $true
 $script:clipStart=[DateTime]::UtcNow.AddSeconds(-10)
+$script:doneStarted=$script:clipStart
 Update-Animation
 if ($script:taskActive -or $script:clipName -ne 'done' -or $script:lastFrameIndex -ne 7) { throw 'Completion phase failed' }
 Write-Output 'WPF task setup, uninterrupted tool handoff, working loop, variation and completion passed.'
+$script:mood='working'; Switch-Art 'working' $true
+$script:taskStart=(Get-AnimationTime).AddMilliseconds(-2000)
+Update-Animation
+$beforeClock=Get-AnimationTime
+Begin-PetDrag
+$heldClock=Get-AnimationTime
+$script:dragStarted=$script:dragStarted.AddMilliseconds(-160)
+Update-Animation
+if ($script:clipName -ne 'drag' -or $script:lastFrameIndex -ne 1) { throw 'Collar drag did not animate' }
+$script:dragStarted=$script:dragStarted.AddMilliseconds(-1280)
+Update-Animation
+if ($script:lastFrameIndex -ne 1) { throw 'Collar drag did not loop' }
+End-PetDrag
+Update-Animation
+if ($script:dragging -or $script:clipName -ne 'work_start') { throw 'Drag did not resume task setup' }
+Begin-PetDrag
+$script:mood='done'; Switch-Art 'done' $true
+Update-Animation
+if ($script:clipName -ne 'drag') { throw 'Work event interrupted held drag' }
+End-PetDrag
+Update-Animation
+if ($script:clipName -ne 'done' -or $script:lastFrameIndex -ne 0) { throw 'New completion did not resume after drag' }
+Write-Output 'WPF collar drag loops, pauses task timeline, and resumes newly received work events.'
 $script:animate.Stop()
 $script:monitor.Stop()
 $script:window.Close()

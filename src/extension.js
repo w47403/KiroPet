@@ -258,7 +258,11 @@ function animate(){if(document.hidden)return;const frame=player.sample(reduced.m
 document.addEventListener('visibilitychange',()=>{clearTimeout(frameTimer);if(document.hidden){player.pause();}else{player.resume();animate();draw();}});
 preload('idle');animate();
 function say(text){bubble.textContent=text;until=Date.now()+2800;bubble.style.display='block'}
-stage.addEventListener('click',()=>{say(phrases[Math.floor(Math.random()*phrases.length)]);player.react('hug');preload('hug');});
+pet.draggable=false;stage.style.touchAction='none';stage.style.userSelect='none';let press=null;
+stage.addEventListener('pointerdown',e=>{if(e.button!==0||press)return;press={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};stage.setPointerCapture(e.pointerId);});
+stage.addEventListener('pointermove',e=>{if(!press||press.id!==e.pointerId)return;if(!press.moved&&Math.abs(e.clientX-press.x)+Math.abs(e.clientY-press.y)>=8){press.moved=true;player.beginDrag();preload('drag');}});
+function releasePet(e,canceled=false){if(!press||press.id!==e.pointerId)return;const moved=press.moved;press=null;player.endDrag();if(stage.hasPointerCapture(e.pointerId))stage.releasePointerCapture(e.pointerId);if(!moved&&!canceled){say(phrases[Math.floor(Math.random()*phrases.length)]);player.react('hug');preload('hug');}}
+stage.addEventListener('pointerup',e=>releasePet(e));stage.addEventListener('pointercancel',e=>releasePet(e,true));stage.addEventListener('lostpointercapture',e=>releasePet(e,true));
 document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',()=>vscode.postMessage({type:el.dataset.action})));
 document.querySelectorAll('[data-state]').forEach(el=>el.addEventListener('click',()=>vscode.postMessage({type:'setState',state:el.dataset.state})));
 let current={state:'idle',project:'',at:0};let seenAt=0;

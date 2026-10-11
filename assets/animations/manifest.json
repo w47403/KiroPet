@@ -10,7 +10,10 @@
       "sit",
       "nap",
       "stretch",
-      "walk"
+      "walk",
+      "rice_scoop",
+      "rice_hug",
+      "rice_full"
     ],
     "initialHoldMs": 22000,
     "restMinMs": 18000,
@@ -315,6 +318,98 @@
         800
       ],
       "loop": false
+    },
+    "rice_scoop": {
+      "frames": [
+        "rice_scoop/00.png",
+        "rice_scoop/01.png",
+        "rice_scoop/02.png",
+        "rice_scoop/03.png",
+        "rice_scoop/04.png",
+        "rice_scoop/05.png",
+        "rice_scoop/06.png",
+        "rice_scoop/07.png"
+      ],
+      "durations": [
+        800,
+        600,
+        600,
+        480,
+        600,
+        600,
+        1000,
+        1200
+      ],
+      "loop": false
+    },
+    "rice_hug": {
+      "frames": [
+        "rice_hug/00.png",
+        "rice_hug/01.png",
+        "rice_hug/02.png",
+        "rice_hug/03.png",
+        "rice_hug/04.png",
+        "rice_hug/05.png",
+        "rice_hug/06.png",
+        "rice_hug/07.png"
+      ],
+      "durations": [
+        800,
+        600,
+        600,
+        800,
+        1000,
+        1000,
+        700,
+        1200
+      ],
+      "loop": false
+    },
+    "rice_full": {
+      "frames": [
+        "rice_full/00.png",
+        "rice_full/01.png",
+        "rice_full/02.png",
+        "rice_full/03.png",
+        "rice_full/04.png",
+        "rice_full/05.png",
+        "rice_full/06.png",
+        "rice_full/07.png"
+      ],
+      "durations": [
+        800,
+        600,
+        600,
+        700,
+        800,
+        1200,
+        700,
+        1400
+      ],
+      "loop": false
+    },
+    "drag": {
+      "frames": [
+        "drag/00.png",
+        "drag/01.png",
+        "drag/02.png",
+        "drag/03.png",
+        "drag/04.png",
+        "drag/05.png",
+        "drag/06.png",
+        "drag/07.png"
+      ],
+      "durations": [
+        160,
+        160,
+        160,
+        160,
+        160,
+        160,
+        160,
+        160
+      ],
+      "loop": true
     }
   }
 }
