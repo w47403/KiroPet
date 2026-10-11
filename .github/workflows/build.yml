@@ -11,6 +11,13 @@ permissions:
   contents: write
 
 jobs:
+  verify-wpf:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode and render native Windows animation frames
+        shell: powershell
+        run: powershell.exe -NoProfile -STA -File test/verify-wpf.ps1
   build:
     runs-on: ubuntu-latest
     steps:
@@ -27,13 +34,20 @@ jobs:
       - name: Syntax checks
         run: |
           node --check src/extension.js
-          python -m py_compile scripts/WhalePet.py build_vsix.py
+          node --check src/animation-player.js
+          node --test test/*.test.js
+          python -m py_compile scripts/WhalePet.py scripts/animation_runtime.py build_vsix.py
           bash -n scripts/HookSignal.sh
       - name: Build VSIX
         run: |
           python build_vsix.py
           mkdir -p dist
           mv ../kiro-whale-pet-*.vsix dist/
+      - name: Verify frame assets
+        run: |
+          python -m pip install Pillow==11.3.0
+          cp dist/*.vsix ../
+          python -m unittest discover -s test -p 'test_*.py'
       - name: Verify Windows PowerShell UTF-8 BOM in release package
         run: |
           python - <<'PY'

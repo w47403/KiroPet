@@ -55,33 +55,34 @@ $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
 $bmp.EndInit()
 $bmp.Freeze()
 $script:picture.Source = $bmp
-$script:arts = @{'idle' = $bmp}
-$script:artFolder = Join-Path (Split-Path -Parent $AssetPath) 'moods'
-foreach ($name in @('idle','happy','hug','sleep','done')) {
-  try {
-    $file = Join-Path $script:artFolder ($name + '.png')
-    if (Test-Path -LiteralPath $file) {
+$script:animationFolder = Join-Path (Split-Path -Parent $AssetPath) 'animations'
+$script:manifest = Get-Content -LiteralPath (Join-Path $script:animationFolder 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$script:frameCache = @{}
+$script:clipName = ''
+$script:clipStart = [DateTime]::UtcNow
+$script:lastFrameIndex = -1
+function Switch-Art([string]$name, [bool]$Restart = $false) {
+  if ($name -eq 'happy') { $name = 'working' }
+  if ($null -eq $script:manifest.clips.PSObject.Properties[$name]) { $name = 'idle' }
+  if ($script:clipName -eq $name -and -not $Restart) { return }
+  if (-not $script:frameCache.ContainsKey($name)) {
+    $frames = @()
+    foreach ($relative in $script:manifest.clips.$name.frames) {
       $frame = New-Object System.Windows.Media.Imaging.BitmapImage
-      $frame.BeginInit(); $frame.UriSource = [System.Uri]::new($file, [System.UriKind]::Absolute)
+      $frame.BeginInit()
+      $frame.UriSource = [System.Uri]::new((Join-Path $script:animationFolder $relative), [System.UriKind]::Absolute)
       $frame.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
       $frame.EndInit(); $frame.Freeze()
-      $script:arts[$name] = $frame
+      $frames += $frame
     }
-  } catch { }
+    $script:frameCache[$name] = $frames
+  }
+  $script:clipName = $name
+  $script:clipStart = [DateTime]::UtcNow
+  $script:lastFrameIndex = -1
+  $script:picture.Source = $script:frameCache[$name][0]
 }
-function Switch-Art([string]$name) {
-  if ($script:arts.ContainsKey($name)) { $script:picture.Source = $script:arts[$name] }
-}
-
-
-$script:transform = New-Object System.Windows.Media.TransformGroup
-$script:scale = New-Object System.Windows.Media.ScaleTransform
-$script:rotate = New-Object System.Windows.Media.RotateTransform
-$script:move = New-Object System.Windows.Media.TranslateTransform
-[void]$script:transform.Children.Add($script:scale)
-[void]$script:transform.Children.Add($script:rotate)
-[void]$script:transform.Children.Add($script:move)
-$script:picture.RenderTransform = $script:transform
+Switch-Art 'idle'
 [void]$script:root.Children.Add($script:picture)
 
 $script:bubble = New-Object System.Windows.Controls.Border
@@ -128,10 +129,13 @@ function Add-MenuItem([System.Windows.Controls.ContextMenu]$menu, [string]$label
 }
 
 $menu = New-Object System.Windows.Controls.ContextMenu
-Add-MenuItem $menu '🐋 摸摸鲸鱼娘' { Say $script:phrases[(Get-Random -Maximum $script:phrases.Count)] }
+Add-MenuItem $menu '🐋 摸摸鲸鱼娘' { Switch-Art 'hug'; $script:reactionUntil = [DateTime]::UtcNow.AddSeconds(2); Say $script:phrases[(Get-Random -Maximum $script:phrases.Count)] }
 Add-MenuItem $menu '💻 工作中' { $script:mood = 'working'; Switch-Art 'happy'; Say '正在认真写代码！' }
+Add-MenuItem $menu '🛠 调用工具' { $script:mood = 'tool'; Switch-Art 'tool'; Say '工具准备好啦～' }
+Add-MenuItem $menu '📝 修改文件' { $script:mood = 'editing'; Switch-Art 'editing'; Say '正在更新文件～' }
 Add-MenuItem $menu '✨ 完成啦' { $script:mood = 'done'; Switch-Art 'done'; Say '任务完成！辛苦啦～' }
 Add-MenuItem $menu '💤 休息一下' { $script:mood = 'idle'; Switch-Art 'idle'; Say '休息一会儿也不错～' }
+Add-MenuItem $menu '🌙 打个盹' { $script:mood = 'sleep'; Switch-Art 'sleep'; Say '呼噜呼噜～' }
 [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
 Add-MenuItem $menu '小小只 (140px)' { Apply-Size 140 }
 Add-MenuItem $menu '正常大小 (190px)' { Apply-Size 190 }
@@ -183,15 +187,17 @@ $script:monitor.Add_Tick({
         $project = ''
       }
       if ($eventKey -ne $script:lastEventKey) {
+        $script:reactionUntil = $null
         $script:lastEventKey = $eventKey
         $script:lastState = $next
         $projectHint = if ($project) { "[$project] " } else { '' }
         switch ($next) {
           'working' { $script:mood = 'working'; Switch-Art 'happy'; Say "${projectHint}Kiro 正在处理…" 3 }
-          'tool' { $script:mood = 'working'; Switch-Art 'happy'; Say "${projectHint}正在调用工具…" 2 }
-          'editing' { $script:mood = 'working'; Switch-Art 'happy'; Say "${projectHint}文件更新啦～" 2 }
-          'done' { $script:mood = 'done'; Switch-Art 'done'; Say "${projectHint}任务完成啦！✨" 5 }
+          'tool' { $script:mood = 'tool'; Switch-Art 'tool'; Say "${projectHint}正在调用工具…" 2 }
+          'editing' { $script:mood = 'editing'; Switch-Art 'editing'; Say "${projectHint}文件更新啦～" 2 }
+          'done' { $script:mood = 'done'; Switch-Art 'done' $true; Say "${projectHint}任务完成啦！✨" 5 }
           'idle' { $script:mood = 'idle'; Switch-Art 'idle'; Say '待机中，随时出发～' 2 }
+          'sleep' { $script:mood = 'sleep'; Switch-Art 'sleep'; Say '呼噜呼噜～' 2 }
           'hello' { Say '我在这里～' 2 }
         }
       }
@@ -200,22 +206,26 @@ $script:monitor.Add_Tick({
 })
 
 $script:animate = New-Object System.Windows.Threading.DispatcherTimer
-$script:animate.Interval = [TimeSpan]::FromMilliseconds(60)
+$script:animate.Interval = [TimeSpan]::FromMilliseconds(80)
 $script:animate.Add_Tick({
-  $t = ([DateTime]::UtcNow - $script:tickStart).TotalSeconds
-  $script:scale.ScaleX = 1 + 0.015 * [Math]::Sin($t * 2.3)
-  $script:scale.ScaleY = 1 + 0.023 * [Math]::Sin($t * 2.3 + 0.3)
+  if (-not $script:window.IsVisible -or $script:window.WindowState -eq [System.Windows.WindowState]::Minimized) { return }
   if ($script:reactionUntil -and [DateTime]::UtcNow -gt $script:reactionUntil) {
     $script:reactionUntil = $null
-    Switch-Art $(if ($script:mood -eq 'done') {'done'} elseif ($script:mood -eq 'working') {'happy'} else {'idle'})
+    Switch-Art $script:mood
   }
-  $script:rotate.Angle = 1.6 * [Math]::Sin($t * 1.4)
-  if ($script:mood -eq 'working') {
-    $script:move.Y = 2.8 * [Math]::Sin($t * 4.0)
-  } elseif ($script:mood -eq 'done') {
-    $script:move.Y = -4 * [Math]::Abs([Math]::Sin($t * 5.0))
-  } else {
-    $script:move.Y = 2 * [Math]::Sin($t * 1.5)
+  $clip = $script:manifest.clips.($script:clipName)
+  $total = 0
+  foreach ($duration in $clip.durations) { $total += $duration }
+  $elapsed = ([DateTime]::UtcNow - $script:clipStart).TotalMilliseconds
+  if ($clip.loop) { $elapsed = $elapsed % $total }
+  $index = $clip.frames.Count - 1
+  for ($i = 0; $i -lt $clip.durations.Count; $i++) {
+    if ($elapsed -lt $clip.durations[$i]) { $index = $i; break }
+    $elapsed -= $clip.durations[$i]
+  }
+  if ($index -ne $script:lastFrameIndex) {
+    $script:picture.Source = $script:frameCache[$script:clipName][$index]
+    $script:lastFrameIndex = $index
   }
   if ([DateTime]::UtcNow -gt $script:bubbleUntil) {
     $script:bubble.Visibility = [System.Windows.Visibility]::Collapsed

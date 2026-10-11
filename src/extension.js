@@ -15,8 +15,8 @@ let activityPath = null;
 let refreshTimer = null;
 let lastDesktopError = '';
 const P = 'kiroWhalePet.';
-const STATES = new Set(['idle', 'working', 'tool', 'editing', 'done']);
-const EMOJI = {idle: '$(smiley)', working: '$(sync~spin)', tool: '$(tools)', editing: '$(edit)', done: '$(check)'};
+const STATES = new Set(['idle', 'working', 'tool', 'editing', 'done', 'sleep']);
+const EMOJI = {idle: '$(smiley)', working: '$(sync~spin)', tool: '$(tools)', editing: '$(edit)', done: '$(check)', sleep: '$(moon)'};
 
 function dataDir() { return extContext.globalStorageUri.fsPath; }
 function localStateFile() { return path.join(dataDir(), 'activity.json'); }
@@ -201,7 +201,11 @@ async function toggleAutoStart() {
 }
 function htmlFor(webview) {
   const uri = webview.asWebviewUri(vscode.Uri.file(path.join(assetsDir(), 'whale-girl.png')));
-  const expressionUris = Object.fromEntries(['idle','happy','hug','sleep','done'].map(name => [name, String(webview.asWebviewUri(vscode.Uri.file(path.join(assetsDir(), 'moods', name + '.png'))))]));
+  const manifest = JSON.parse(fs.readFileSync(path.join(assetsDir(), 'animations', 'manifest.json'), 'utf8'));
+  for (const clip of Object.values(manifest.clips)) {
+    clip.frames = clip.frames.map(file => String(webview.asWebviewUri(vscode.Uri.file(path.join(assetsDir(), 'animations', file)))));
+  }
+  const playerSource = fs.readFileSync(path.join(extContext.extensionPath, 'src', 'animation-player.js'), 'utf8');
   const nonce = crypto.randomBytes(16).toString('hex');
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -212,21 +216,13 @@ function htmlFor(webview) {
   header{display:flex;justify-content:space-between;align-items:center;gap:6px;font-weight:700;font-size:15px}
   .tag{border:1px solid var(--vscode-panel-border);padding:4px 8px;border-radius:99px;font-size:11px;font-weight:500}
   #stage{position:relative;height:350px;max-height:55vh;min-height:250px;display:flex;align-items:end;justify-content:center;overflow:hidden;cursor:pointer}
-  #pet{max-height:98%;max-width:100%;object-fit:contain;transform-origin:50% 77%;animation:breath 2.8s ease-in-out infinite,tilt 5s ease-in-out infinite;user-select:none;filter:drop-shadow(0 5px 6px rgba(49,136,202,.22));}
-  #stage.working #pet{animation:breath 1.4s ease-in-out infinite,tilt 2s ease-in-out infinite}
-  #stage.done #pet{animation:happy .65s ease-in-out 3,breath 2.8s ease-in-out infinite}
-  #stage.tool #pet,#stage.editing #pet{animation:work 1.25s ease-in-out infinite}
+  #pet{height:98%;max-width:100%;object-fit:contain;user-select:none;filter:drop-shadow(0 5px 6px rgba(49,136,202,.22));}
   #bubble{position:absolute;top:5px;z-index:2;max-width:88%;background:var(--vscode-editorWidget-background);border:1px solid var(--vscode-panel-border);border-radius:14px;padding:8px 12px;text-align:center;font-size:12px;box-shadow:0 4px 12px #0002}
   .buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
   button{border:1px solid var(--vscode-button-border,transparent);border-radius:7px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:9px;cursor:pointer}
   button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}
   #activity{font-size:12px;opacity:.78;text-align:center;min-height:20px}
   p{font-size:11px;opacity:.72;line-height:1.5}
-  @keyframes breath{0%,100%{scale:1 1}50%{scale:1.015 1.03}}
-  @keyframes tilt{0%,100%{rotate:-1deg}50%{rotate:1.3deg}}
-  @keyframes work{0%,100%{transform:translateY(2px) rotate(-1deg)}50%{transform:translateY(-4px) rotate(1deg)}}
-  @keyframes happy{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px) rotate(2deg)}}
-  @media(prefers-reduced-motion:reduce){#pet{animation:none!important}}
 </style></head><body>
 <header><span>🐋 鲸鱼娘</span><span class="tag" id="status">待机中</span></header>
 <div id="stage" title="点击摸摸头"><div id="bubble">嗨～一起写代码吧！</div><img id="pet" src="${uri}" alt="原创鲸鱼娘立绘"></div>
@@ -235,30 +231,39 @@ function htmlFor(webview) {
 <button data-action="showDesktop">打开桌面悬浮窗</button>
 <button class="secondary" data-action="hideDesktop">关闭悬浮窗</button>
 <button class="secondary" data-state="working">工作中</button>
+<button class="secondary" data-state="tool">调用工具</button>
+<button class="secondary" data-state="editing">修改文件</button>
 <button class="secondary" data-state="done">完成啦</button>
 <button class="secondary" data-state="idle">待机</button>
+<button class="secondary" data-state="sleep">休息</button>
 <button data-action="installHooks">开启项目联动</button>
 </div>
 <p>关闭这个面板后，随时按 Ctrl/Cmd + Shift + P，运行「鲸鱼娘：打开 Kiro 内桌宠面板」。状态来自 Agent 事件，不代表真实 token 数量或 AI 内部思考进度。</p>
 <script nonce="${nonce}">
+${playerSource}
 const vscode=acquireVsCodeApi();const stage=document.getElementById('stage'),bubble=document.getElementById('bubble');
 const phrases=['在呢～','呼噜呼噜～','摸摸头～','你写代码，我负责卖萌！'];let until=0;
-const sprites=${JSON.stringify(expressionUris)};const pet=document.getElementById('pet');let reactionUntil=0;
+const manifest=${JSON.stringify(manifest)};const pet=document.getElementById('pet');
+const player=new WhaleAnimation.AnimationPlayer(manifest);const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+const loaded=new Set();let frameTimer=null;let lastFrame='';
+function preload(name){const clip=manifest.clips[name];if(!clip)return;for(const src of clip.frames){if(loaded.has(src))continue;loaded.add(src);const img=new Image();img.src=src;}}
+function animate(){if(document.hidden)return;const frame=player.sample(reduced.matches);preload(frame.name);if(frame.path!==lastFrame){pet.src=frame.path;lastFrame=frame.path;}frameTimer=setTimeout(animate,80);}
+document.addEventListener('visibilitychange',()=>{clearTimeout(frameTimer);if(document.hidden){player.pause();}else{player.resume();animate();draw();}});
+preload('idle');animate();
 function say(text){bubble.textContent=text;until=Date.now()+2800;bubble.style.display='block'}
-stage.addEventListener('click',()=>{say(phrases[Math.floor(Math.random()*phrases.length)]);pet.src=sprites.hug;reactionUntil=Date.now()+2400;});
+stage.addEventListener('click',()=>{say(phrases[Math.floor(Math.random()*phrases.length)]);player.react('hug');preload('hug');});
 document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',()=>vscode.postMessage({type:el.dataset.action})));
 document.querySelectorAll('[data-state]').forEach(el=>el.addEventListener('click',()=>vscode.postMessage({type:'setState',state:el.dataset.state})));
 let current={state:'idle',project:'',at:0};let seenAt=0;
-function draw(){let label={idle:'💤 待机中',working:'💻 正在处理',tool:'🛠️ 正在调用工具',editing:'📝 已修改文件',done:'✨ 完成啦'}[current.state]||'待机中';
+function draw(){if(document.hidden)return;let label={idle:'💤 待机中',working:'💻 正在处理',tool:'🛠️ 正在调用工具',editing:'📝 已修改文件',done:'✨ 完成啦',sleep:'🌙 休息中'}[current.state]||'待机中';
  document.getElementById('status').textContent=label;stage.className=current.state;
- if(Date.now()>reactionUntil) { let expression={idle:'idle',working:'happy',tool:'hug',editing:'happy',done:'done'}[current.state]||'idle'; if(pet.src!==sprites[expression])pet.src=sprites[expression]; }
  let elapsed=(Date.now()-Number(current.at))/1000;
  document.getElementById('activity').textContent=(current.project?'项目：'+current.project+' · ':'')+
    (elapsed>0&&Number.isFinite(elapsed)&&elapsed<36000?'事件发生于 '+Math.floor(elapsed)+' 秒前':'等待 Agent 事件');
  if(Date.now()>until)bubble.style.display='none';}
 window.addEventListener('message',evt=>{const data=evt.data;if(!data||data.type!=='activity')return;
- let next=data.activity;if(next.at!==seenAt){seenAt=next.at;let map={working:'开始工作啦～',tool:'调用工具中…',editing:'文件更新成功！',done:'大功告成！',idle:'随时待命～'};say(map[next.state]||'嗨～')}
- current=next;draw();});
+ let next=data.activity;const newEvent=next.at!==seenAt;if(newEvent){seenAt=next.at;let map={working:'开始工作啦～',tool:'调用工具中…',editing:'文件更新成功！',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};say(map[next.state]||'嗨～')}
+ current=next;player.setState(next.state,newEvent&&next.state==='done');preload(next.state);draw();});
 setInterval(draw,500);vscode.postMessage({type:'ready'});
 </script></body></html>`;
 }
@@ -292,6 +297,9 @@ async function openMenu() {
     {label:'$(sync) 工作中', fn:()=>writeActivity('working')},
     {label:'$(check) 完成啦', fn:()=>writeActivity('done')},
     {label:'$(coffee) 待机', fn:()=>writeActivity('idle')},
+    {label:'$(tools) 调用工具', fn:()=>writeActivity('tool')},
+    {label:'$(edit) 修改文件', fn:()=>writeActivity('editing')},
+    {label:'$(moon) 休息', fn:()=>writeActivity('sleep')},
     {label:'$(plug) 为当前项目安装 Agent 联动', fn:installHooks},
     {label:'$(files) 为所有已打开项目安装 Agent 联动', fn:installHooksAll},
     {label:'$(trash) 移除当前项目联动', fn:removeHooks},
@@ -315,6 +323,9 @@ function activate(context) {
   register('working', ()=>writeActivity('working'));
   register('done', ()=>writeActivity('done'));
   register('idle', ()=>writeActivity('idle'));
+  register('sleep', ()=>writeActivity('sleep'));
+  register('tool', ()=>writeActivity('tool'));
+  register('editing', ()=>writeActivity('editing'));
   register('installHooks', installHooks);
   register('installHooksAll', installHooksAll);
   register('removeHooks', removeHooks);

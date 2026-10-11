@@ -2,3 +2,8 @@
 .git/**
 *.vsix
 build_vsix.py
+test/**
+docs/**
+assets/animations/source/**
+assets/reference/**
+scripts/prepare_animation_assets.py

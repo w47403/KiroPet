@@ -14,6 +14,8 @@ Thumbs.db
 *.vsix
 dist/
 build/
+output/
+assets/animations/source/*.png
 
 # Local credentials and hook activity files
 .env
