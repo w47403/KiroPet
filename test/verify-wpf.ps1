@@ -41,13 +41,13 @@ if (-not $script:folded -or $script:dockTab.Visibility -ne 'Visible') { throw 'D
 if ($script:dockTab.Width -ne 56 -or $script:dockTab.Height -ne 74) { throw 'Peek face strip size is wrong' }
 if (-not $script:peekPicture.Source.IsFrozen -or $script:peekPicture.Source.PixelWidth -ne 216) { throw 'Peeking face was not cropped from approved art' }
 $script:mood='idle'; Update-Peek
-if ($script:peekBadge.Text -ne '♡') { throw 'Peeking idle heart failed' }
+if ($script:peekBadge.Text -ne [string][char]0x2661) { throw 'Peeking idle heart failed' }
 $script:foldedAt=[DateTime]::UtcNow.AddMilliseconds(-5100); Update-Peek
 if (-not [object]::ReferenceEquals($script:peekPicture.Source,$script:peekFaces['blink'])) { throw 'Peeking blink never triggered' }
 $script:mood='working'; Update-Peek
-if ($script:peekBadge.Text -ne '••') { throw 'Folded AI working badge failed' }
+if ($script:peekBadge.Text -ne ([string][char]0x2022+[string][char]0x2022)) { throw 'Folded AI working badge failed' }
 $script:mood='done'; Update-Peek
-if ($script:peekBadge.Text -ne '✦') { throw 'Folded completion badge failed' }
+if ($script:peekBadge.Text -ne [string][char]0x2726) { throw 'Folded completion badge failed' }
 $script:mood='idle'
 
 # Seek the exact clocks applied to Window.Left/Top. CI has no reliable render cadence.
