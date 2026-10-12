@@ -1,4 +1,12 @@
-# 🐋 KiroPet · Kiro AI 桌宠 v0.5.2
+# 🐋 KiroPet · Kiro AI 桌宠 v0.5.3
+
+## v0.5.3 工作动画桌面稳定性修复
+
+- 修正工作/修改文件/工具与工作间歇的桌面逐帧定位：以桌面木纹的水平边缘为基准，在打包阶段统一画面位置，降低桌子和人物整体上下颠簸。工作开场最后一帧与收尾前三帧也参与对齐。
+- 只平移整张透明帧，不拉伸人物、不改变原有表情动作；限制位移避免裙摆、鞋子、尾巴被裁切。同步修正 Windows/Kiro 面板使用的 PNG 与 macOS/Linux Tk 的 190px 帧。
+- GitHub Actions 会在测试、打包之前执行 `scripts/stabilize_work_frames.py`，本地需要先安装 Pillow 并执行 `python scripts/stabilize_work_frames.py` 再运行 `python build_vsix.py`。重新用 `scripts/prepare_animation_assets.py` 生成素材时也会自动校准。
+- 这是**桌面位置稳定性**修复，不会自动重新绘制原画；不同帧绘制的桌宽、发型与脸型细节仍可能存在差异，彻底统一需要继续重绘源分格图。
+
 
 ## v0.5.2 坐姿修正、吃白饭与拎后领拖动
 
@@ -54,7 +62,7 @@ Kiro/VS Code 兼容插件，不消耗模型积分，不读取聊天/思考内容
 ## 📦 更新安装
 
 1. 打开 Kiro IDE；按 `Ctrl+Shift+P`（macOS 用 `Cmd+Shift+P`）。
-2. 运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.5.2.vsix`。
+2. 运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.5.3.vsix`。
 3. 如果之前装过 v0.1.0，会以相同的 publisher + name 更新；安装后 **Developer: Reload Window**。
 4. 在屏幕右下角找鲸鱼娘；点击 Kiro 底部状态栏的 `鲸鱼娘` 进入控制菜单。
 

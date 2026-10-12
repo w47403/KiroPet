@@ -8,6 +8,7 @@ import hashlib
 import json
 from PIL import Image
 from PIL import ImageFilter, ImageChops
+from stabilize_work_frames import stabilize_frames
 
 ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / 'assets' / 'animations'
@@ -139,6 +140,8 @@ def prepare():
             'frames': paths, 'durations': DURATIONS[state],
             'loop': state in ('working','tool','editing','sleep','drag'),
         }
+    # Ensure the desk stays fixed even when regenerating the source sprite sheets.
+    stabilize_frames(DEST)
     (DEST / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     # Default and legacy mood paths now use the approved complete-body character.
     legacy = {'idle': 'idle', 'happy': 'working', 'hug': 'hug', 'sleep': 'sleep', 'done': 'done'}
