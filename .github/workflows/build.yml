@@ -15,6 +15,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install asset processor
+        run: python -m pip install Pillow==11.3.0
+      - name: Stabilize work frames on Windows
+        run: python scripts/stabilize_work_frames.py
       - name: Decode and render native Windows animation frames
         shell: powershell
         run: powershell.exe -NoProfile -STA -File test/verify-wpf.ps1
@@ -32,6 +36,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install asset processor
+        run: python -m pip install Pillow==11.3.0
+      - name: Stabilize work frames before packaging
+        run: python scripts/stabilize_work_frames.py
       - name: Syntax checks
         run: |
           node --check src/extension.js
@@ -46,7 +54,6 @@ jobs:
           mv ../kiro-whale-pet-*.vsix dist/
       - name: Verify frame assets
         run: |
-          python -m pip install Pillow==11.3.0
           cp dist/*.vsix ../
           python -m unittest discover -s test -p 'test_*.py'
       - name: Verify Windows PowerShell UTF-8 BOM in release package
