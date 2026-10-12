@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 from animation_runtime import IdleDirector, WorkDirector, DragDirector
 from dock_runtime import snap, hidden_position, ease_out, TAB_EXPOSURE
-from status_signal import activity
+from status_signal import activity, merge_activity
 
 
 class BehaviorTest(unittest.TestCase):
@@ -92,6 +92,45 @@ class BehaviorTest(unittest.TestCase):
         self.assertNotIn('private',json.dumps(payload)); self.assertNotIn('secret',json.dumps(payload))
         self.assertEqual(activity('working','',dict(event,hook_event_name='PostToolUse'))['detail'],
                          '工具已返回，继续处理 · read_file')
+
+    def test_agent_stop_survives_late_tool_callbacks_and_restarts_on_new_prompt(self):
+        start = activity('working', 'demo', {'hook_event_name':'PromptSubmit','session_id':'one'})
+        start['at'] = 1000
+        current = merge_activity({}, start)
+        self.assertEqual(current['eventCount'], 1)
+        self.assertEqual(current['startedAt'], 1000)
+        tool = activity('tool', 'demo', {'hook_event_name':'PreToolUse','tool_name':'remote_web_search','session_id':'one'})
+        tool['at'] = 2000
+        current = merge_activity(current, tool)
+        self.assertEqual((current['state'],current['eventCount'],current['startedAt']), ('tool',2,1000))
+        done = activity('done','demo',{'hook_event_name':'AgentStop','session_id':'one'})
+        done['at'] = 3000
+        current = merge_activity(current, done)
+        self.assertEqual(current['phase'], 'finish')
+        self.assertEqual(current['eventCount'], 3)
+        late = activity('working','demo',{'hook_event_name':'PostToolUse','session_id':'one'})
+        late['at'] = 4000
+        self.assertEqual(merge_activity(current,late),current)
+        other = activity('working','different',{'hook_event_name':'PreToolUse','session_id':'two'})
+        other['at'] = 5000
+        self.assertEqual(merge_activity(current,other)['state'],'working')
+        restart = activity('working','demo',{'hook_event_name':'PromptSubmit','session_id':'one'})
+        restart['at'] = 6000
+        result = merge_activity(current,restart)
+        self.assertEqual((result['state'],result['startedAt'],result['eventCount']),('working',6000,1))
+        self.assertNotIn('one',json.dumps(current))  # raw session ID is not stored
+
+    def test_real_hook_exit_does_not_overwrite_done(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = str(Path(directory)/'activity.json')
+            script = str(ROOT/'scripts/status_signal.py')
+            for kind, name in [('working','PromptSubmit'),('done','AgentStop'),('tool','PreToolUse')]:
+                data = json.dumps({'hook_event_name':name, 'session_id':'abc123', 'tool_name':'remote_web_search'})
+                proc = subprocess.run([sys.executable,script,target,kind,'demo'],input=data,text=True,capture_output=True)
+                self.assertEqual(proc.returncode,0)
+            data = json.loads(Path(target).read_text(encoding='utf8'))
+            self.assertEqual(data['state'],'done')
+            self.assertEqual(data['eventCount'],2)
 
     def test_hook_reader_handles_real_stdin_and_malformed_payload(self):
         with tempfile.TemporaryDirectory() as directory:
