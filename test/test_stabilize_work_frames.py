@@ -42,7 +42,7 @@ class DeskStabilizationTest(unittest.TestCase):
                     self.picture(cx, top).save(root / name / f'{index:02}.png')
                     self.picture(cx, top).resize((142, 190)).save(root / 'tk' / '190' / name / f'{index:02}.png')
             for name, index in TRANSITIONS:
-                (root / name).mkdir()
+                (root / name).mkdir(exist_ok=True)
                 self.picture(127, 224).save(root / name / f'{index:02}.png')
             shifts = stabilize_frames(root, verbose=False)
             self.assertTrue(any(dx or dy for _, _, dx, dy, _, _ in shifts))
