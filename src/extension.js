@@ -6,6 +6,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const {eventProgress, isManagedHook, inspectHooks} = require('./event-health');
 
 let extContext;
 let child = null;
@@ -37,7 +38,9 @@ function readActivity() {
     const obj = JSON.parse(fs.readFileSync(localStateFile(), 'utf8'));
     return {state: STATES.has(obj.state) ? obj.state : 'idle',
       project: String(obj.project || '').slice(0, 80), detail: String(obj.detail || '').replace(/[\x00-\x1f]/g,' ').slice(0, 160),
-      phase: ['start','continue','finish'].includes(obj.phase) ? obj.phase : '', at: Number(obj.at) || 0};
+      phase: ['start','continue','finish'].includes(obj.phase) ? obj.phase : '',
+      at: Number(obj.at) || 0, startedAt: Number(obj.startedAt) || Number(obj.at) || 0,
+      eventCount: Number(obj.eventCount) || 0, event: String(obj.event || '').slice(0,40)};
   } catch (_) { return {state: 'idle', project: '', at: 0}; }
 }
 function writeActivity(state, project = '', detail = '', phase = '') {
@@ -46,17 +49,19 @@ function writeActivity(state, project = '', detail = '', phase = '') {
   try {
     fs.mkdirSync(dir, {recursive: true});
     const tmp = path.join(dir, `activity.${process.pid}.tmp`);
-    fs.writeFileSync(tmp, JSON.stringify({state, project, phase, detail: String(detail).slice(0,160), at: Date.now()}), 'utf8');
+    fs.writeFileSync(tmp, JSON.stringify({state, project, phase, detail: String(detail).slice(0,160),
+      at: Date.now(), startedAt: Date.now(), eventCount: 0, event: 'Manual'}), 'utf8');
     fs.renameSync(tmp, localStateFile());
     refresh();
   } catch (err) { vscode.window.showWarningMessage('鲸鱼娘状态写入失败：' + err.message); }
 }
 function refresh() {
   const activity = readActivity();
-  const text = EMOJI[activity.state] || EMOJI.idle;
+  const progress = eventProgress(activity);
+  const text = progress.stale ? '$(warning)' : (EMOJI[activity.state] || EMOJI.idle);
   if (statusItem) {
     statusItem.text = `${text} 鲸鱼娘`;
-    statusItem.tooltip = `鲸鱼娘 · ${activity.detail || activity.state}${activity.project ? ' · ' + activity.project : ''}\n点击打开控制菜单`;
+    statusItem.tooltip = `鲸鱼娘 · ${activity.detail || activity.state}${activity.project ? ' · ' + activity.project : ''}\n${progress.label} · 已接收 ${progress.eventCount} 条事件 · ${progress.durationSeconds}s\n点击打开控制菜单`;
   }
   if (panel) panel.webview.postMessage({type: 'activity', activity});
 }
@@ -151,11 +156,7 @@ function buildHooks(projectName) {
     action: {type:'command', command:hookCommand(state, projectName, trigger==='PromptSubmit'?'start':trigger==='AgentStop'?'finish':'continue')}
   }))};
 }
-function recognizedHook(data) {
-  return data && data.version === 'v1' && Array.isArray(data.hooks) && data.hooks.length >= 2 &&
-    data.hooks.every(h => typeof h.name === 'string' &&
-      (h.name.startsWith('Whale Pet - ') || h.name.startsWith('鲸鱼娘 · ')));
-}
+function recognizedHook(data) { return isManagedHook(data); }
 async function installForFolders(folders, silent = false) {
   if (!folders.length) return vscode.window.showWarningMessage('请先在 Kiro 打开一个本地项目文件夹。');
   if (!silent) {
@@ -183,6 +184,43 @@ async function installForFolders(folders, silent = false) {
   }
   if (!silent) vscode.window.showInformationMessage(
     `鲸鱼娘联动：新安装 ${installed} 个，跳过已有文件 ${skipped} 个。打开新 Agent 会话后生效。`);
+}
+// Upgrade only configs the user previously installed through KiroPet.
+// Never touch project hooks created by other extensions or the user.
+function upgradeOwnedHooks() {
+  let updated = 0;
+  for (const folder of getProjectFolders()) {
+    const target = hookPath(folder);
+    if (!fs.existsSync(target)) continue;
+    try {
+      const old = JSON.parse(fs.readFileSync(target, 'utf8'));
+      if (!isManagedHook(old)) continue;
+      const next = buildHooks(folder.name);
+      if (JSON.stringify(old.hooks) === JSON.stringify(next.hooks)) continue;
+      fs.copyFileSync(target, target + '.bak');
+      fs.writeFileSync(target, JSON.stringify(next, null, 2) + '\n');
+      updated++;
+    } catch (err) { console.warn('[KiroPet] managed Hook upgrade skipped:', err.message); }
+  }
+  if (updated) vscode.window.showInformationMessage(
+    `鲸鱼娘已升级 ${updated} 个项目的 Agent Hooks（已保留 .bak）。请在 Kiro 新开一轮对话验证 AgentStop。`);
+}
+async function checkLink() {
+  const folders = getProjectFolders();
+  if (!folders.length) return vscode.window.showWarningMessage('当前没有打开的本地项目，无法检查 Hook。');
+  const rows = inspectHooks(folders, folder => {
+    const target = hookPath(folder);
+    return fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8')) : null;
+  });
+  const labels = {'ok':'已包含 AgentStop','missing':'未安装','custom':'非桌宠 Hook（不会覆盖）',
+    'no-stop':'缺少完成事件','invalid':'配置无效'};
+  const current = readActivity();
+  const progress = eventProgress(current);
+  const text = rows.map(item => `${item.folder.name}: ${labels[item.status]}`).join('；');
+  const choice = await vscode.window.showInformationMessage(
+    `鲸鱼娘联动诊断：${text}。最近事件：${current.event || '暂无'} / ${current.state}；${progress.label}，累计 ${progress.eventCount} 条。`,
+    '修复项目联动', '取消');
+  if (choice === '修复项目联动') await installForFolders(folders);
 }
 async function installHooks() { await installForFolders(getProjectFolders().slice(0,1)); }
 async function installHooksAll() { await installForFolders(getProjectFolders()); }
@@ -233,7 +271,7 @@ function htmlFor(webview) {
 </style></head><body>
 <header><span>🐋 鲸鱼娘</span><span class="tag" id="status">待机中</span></header>
 <div id="stage" title="点击摸摸头"><div id="bubble">嗨～一起写代码吧！</div><img id="pet" src="${uri}" alt="原创鲸鱼娘立绘"></div>
-<div id="activity">正在准备…</div>
+<div id="activity">正在准备…</div><div id="events" style="font-size:12px;text-align:center;opacity:.8;margin:6px 0">等待真实 Hook 事件…</div>
 <div class="buttons">
 <button data-action="showDesktop">打开桌面悬浮窗</button>
 <button class="secondary" data-action="hideDesktop">关闭悬浮窗</button>
@@ -244,6 +282,7 @@ function htmlFor(webview) {
 <button class="secondary" data-state="idle">待机</button>
 <button class="secondary" data-state="sleep">休息</button>
 <button data-action="installHooks">开启项目联动</button>
+ <button class="secondary" data-action="checkLink">诊断事件联动</button>
 </div>
 <p>关闭这个面板后，随时按 Ctrl/Cmd + Shift + P，运行「鲸鱼娘：打开 Kiro 内桌宠面板」。状态来自 Agent 事件，不代表真实 token 数量或 AI 内部思考进度。</p>
 <script nonce="${nonce}">
@@ -269,9 +308,16 @@ let current={state:'idle',project:'',at:0};let seenAt=0;
 function draw(){if(document.hidden)return;let label={idle:'💤 待机中',working:'💻 正在处理',tool:'🛠️ 正在调用工具',editing:'📝 已修改文件',done:'✨ 完成啦',sleep:'🌙 休息中'}[current.state]||'待机中';
  document.getElementById('status').textContent=label;stage.className=current.state;
  let elapsed=(Date.now()-Number(current.at))/1000;
+ const age=Number.isFinite(elapsed)&&elapsed>=0?Math.floor(elapsed):0;
+ const active=['working','tool','editing'].includes(current.state);
+ const stale=active&&age>180;
+ const started=Number(current.startedAt)||Number(current.at);
+ const elapsedTask=started>0?Math.max(0,Math.floor((Date.now()-started)/1000)):0;
  document.getElementById('activity').textContent=(current.detail?current.detail+' · ':'')+(current.project?'项目：'+current.project+' · ':'')+
-   (elapsed>0&&Number.isFinite(elapsed)&&elapsed<36000?'事件发生于 '+Math.floor(elapsed)+' 秒前':'等待 Agent 事件');
- if(['working','tool','editing'].includes(current.state)&&Date.now()>until){bubble.textContent=current.detail||label; bubble.style.display='block';}
+   (current.at?'上次事件 '+age+' 秒前':'等待 Agent 事件');
+ document.getElementById('events').textContent='Hook 事件：'+(current.event||'暂无')+
+   ' · 本轮 '+(current.eventCount||0)+' 次 · 已用 '+elapsedTask+' 秒'+(stale?' · 完成状态未确认':'');
+ if(active&&Date.now()>until){bubble.textContent=stale?'暂未收到新的 Hook 事件 · 不代表 AI 已完成':(current.detail||label); bubble.style.display='block';}
  else if(Date.now()>until)bubble.style.display='none';}
 window.addEventListener('message',evt=>{const data=evt.data;if(!data||data.type!=='activity')return;
  let next=data.activity;const newEvent=next.at!==seenAt;if(newEvent){seenAt=next.at;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};say(next.detail||map[next.state]||'嗨～')}
@@ -294,6 +340,7 @@ function openPanel() {
       case 'showDesktop': startDesktop(true); break;
       case 'hideDesktop': stopDesktop(); break;
       case 'installHooks': await installHooks(); break;
+      case 'checkLink': await checkLink(); break;
       case 'setState': if (STATES.has(msg.state)) writeActivity(msg.state); break;
       default: break;
     }
@@ -312,6 +359,7 @@ async function openMenu() {
     {label:'$(tools) 调用工具', fn:()=>writeActivity('tool')},
     {label:'$(edit) 修改文件', fn:()=>writeActivity('editing')},
     {label:'$(moon) 休息', fn:()=>writeActivity('sleep')},
+    {label:'$(pulse) 检查联动与完成事件', fn:checkLink},
     {label:'$(plug) 为当前项目安装 Agent 联动', fn:installHooks},
     {label:'$(files) 为所有已打开项目安装 Agent 联动', fn:installHooksAll},
     {label:'$(trash) 移除当前项目联动', fn:removeHooks},
@@ -342,11 +390,14 @@ function activate(context) {
     if (event && STATES.has(event.state)) writeActivity(event.state, String(event.project || ''), event.detail || '', event.phase || '');
   });
   register('installHooks', installHooks);
+  register('checkLink', checkLink);
   register('installHooksAll', installHooksAll);
   register('removeHooks', removeHooks);
   register('toggleAutoStart', toggleAutoStart);
   refreshTimer = setInterval(refresh, 900);
   context.subscriptions.push({dispose:()=>{clearInterval(refreshTimer);refreshTimer=null;}});
+  // Existing generated hooks can be older than the extension itself.
+  upgradeOwnedHooks();
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(evt => {
     if (settings().get('autoInstallHooksNewProjects',false)) installForFolders(evt.added.filter(w=>w.uri.scheme==='file'), true);
   }));

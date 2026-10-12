@@ -46,7 +46,7 @@ content_types = '''<?xml version="1.0" encoding="utf-8"?>
   <Override PartName="/extension.vsixmanifest" ContentType="text/xml" />
 </Types>
 '''
-files = ['package.json', 'src/extension.js', 'src/animation-player.js', 'scripts/WhalePet.ps1', 'scripts/WhalePet.py', 'scripts/animation_runtime.py', 'scripts/HookSignal.ps1', 'scripts/HookSignal.sh', 'assets/whale-girl.png', 'assets/icon.png', 'README.md', 'LICENSE']
+files = ['package.json', 'src/extension.js', 'src/animation-player.js', 'src/event-health.js', 'scripts/WhalePet.ps1', 'scripts/WhalePet.py', 'scripts/animation_runtime.py', 'scripts/HookSignal.ps1', 'scripts/HookSignal.sh', 'assets/whale-girl.png', 'assets/icon.png', 'README.md', 'LICENSE']
 files += [f'assets/moods/{name}.png' for name in ('idle','happy','hug','sleep','done')]
 files += ['scripts/status_signal.py', 'scripts/dock_runtime.py']
 files += [str(file.relative_to(ROOT)).replace('\\', '/') for file in (ROOT / 'assets' / 'animations').rglob('*')
