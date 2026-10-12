@@ -437,7 +437,13 @@ $script:monitor.Add_Tick({
           'working' { $script:mood = 'working'; Switch-Art 'happy'; Say "${projectHint}Kiro 正在处理…" 3 }
           'tool' { $script:mood = 'tool'; Switch-Art 'tool'; Say "${projectHint}正在调用工具…" 2 }
           'editing' { $script:mood = 'editing'; Switch-Art 'editing'; Say "${projectHint}文件更新啦～" 2 }
-          'done' { $script:mood = 'done'; Switch-Art 'done' $true; Say "${projectHint}任务完成啦！✨" 5 }
+          'done' {
+            if ($script:folded) {
+              Expand-Dock
+              if ($script:dockSide) { $script:hideAt = [DateTime]::UtcNow.AddSeconds(9) }
+            }
+            $script:mood = 'done'; Switch-Art 'done' $true; Say "${projectHint}任务完成啦！✨" 5
+          }
           'idle' { $script:mood = 'idle'; Switch-Art 'idle'; Say '待机中，随时出发～' 2 }
           'sleep' { $script:mood = 'sleep'; Switch-Art 'sleep'; Say '呼噜呼噜～' 2 }
           'hello' { Say '我在这里～' 2 }
