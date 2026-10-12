@@ -11,7 +11,7 @@ build-time Pillow utility; installed companions require no image libraries.
 """
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageDraw
 
 from stabilize_work_frames import ANIMATIONS, DESK_CLIPS, TRANSITIONS, desk_anchor
 
@@ -65,7 +65,7 @@ def lock_desks(folder=ANIMATIONS, *, verbose=True):
         if point is None or abs(point[0] - anchor[0]) > 5 or abs(point[1] - anchor[1]) > 5:
             raise ValueError(f'{path}: tabletop not aligned, run stabilize_work_frames.py first')
         locked = Image.composite(reference, original, mask)
-        if ImageChops.difference(locked, original).getbbox() is None:
+        if locked.tobytes() == original.tobytes():
             continue
         locked.save(path, optimize=True)
         tk_path = folder / 'tk' / '190' / name / path.name
