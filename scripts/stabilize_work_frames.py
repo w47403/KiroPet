@@ -19,8 +19,9 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 ANIMATIONS = ROOT / 'assets' / 'animations'
 DESK_CLIPS = ('working', 'editing', 'tool', 'work_pause')
-# Only the last intro frame and first outro frame display a settled desk.
-TRANSITIONS = (('work_start', 7), ('done', 0))
+# Last setup frame and first three completion frames still show the full desk.
+# Later completion frames intentionally remove/move the desk, so leave them alone.
+TRANSITIONS = (('work_start', 7), ('done', 0), ('done', 1), ('done', 2))
 
 
 def is_wood(rgba):
@@ -92,7 +93,7 @@ def stabilize_frames(folder=ANIMATIONS, *, verbose=True):
     for path, frame, (cx, top) in detected:
         want_dx, want_dy = target_x - cx, target_y - top
         # A large offset usually indicates that the detected object is wrong.
-        if abs(want_dx) > 24 or abs(want_dy) > 30:
+        if abs(want_dx) > 24 or abs(want_dy) > (40 if path.parent.name == 'done' else 30):
             if path.parent.name in DESK_CLIPS:
                 raise ValueError(f'{path}: suspicious desk displacement: {(want_dx, want_dy)}')
             continue
