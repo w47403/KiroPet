@@ -271,7 +271,7 @@ function htmlFor(webview) {
 </style></head><body>
 <header><span>🐋 鲸鱼娘</span><span class="tag" id="status">待机中</span></header>
 <div id="stage" title="点击摸摸头"><div id="bubble">嗨～一起写代码吧！</div><img id="pet" src="${uri}" alt="原创鲸鱼娘立绘"></div>
-<div id="activity">正在准备…</div>
+<div id="activity">正在准备…</div><div id="events" style="font-size:12px;text-align:center;opacity:.8;margin:6px 0">等待真实 Hook 事件…</div>
 <div class="buttons">
 <button data-action="showDesktop">打开桌面悬浮窗</button>
 <button class="secondary" data-action="hideDesktop">关闭悬浮窗</button>
@@ -282,6 +282,7 @@ function htmlFor(webview) {
 <button class="secondary" data-state="idle">待机</button>
 <button class="secondary" data-state="sleep">休息</button>
 <button data-action="installHooks">开启项目联动</button>
+ <button class="secondary" data-action="checkLink">诊断事件联动</button>
 </div>
 <p>关闭这个面板后，随时按 Ctrl/Cmd + Shift + P，运行「鲸鱼娘：打开 Kiro 内桌宠面板」。状态来自 Agent 事件，不代表真实 token 数量或 AI 内部思考进度。</p>
 <script nonce="${nonce}">
@@ -307,9 +308,16 @@ let current={state:'idle',project:'',at:0};let seenAt=0;
 function draw(){if(document.hidden)return;let label={idle:'💤 待机中',working:'💻 正在处理',tool:'🛠️ 正在调用工具',editing:'📝 已修改文件',done:'✨ 完成啦',sleep:'🌙 休息中'}[current.state]||'待机中';
  document.getElementById('status').textContent=label;stage.className=current.state;
  let elapsed=(Date.now()-Number(current.at))/1000;
+ const age=Number.isFinite(elapsed)&&elapsed>=0?Math.floor(elapsed):0;
+ const active=['working','tool','editing'].includes(current.state);
+ const stale=active&&age>180;
+ const started=Number(current.startedAt)||Number(current.at);
+ const elapsedTask=started>0?Math.max(0,Math.floor((Date.now()-started)/1000)):0;
  document.getElementById('activity').textContent=(current.detail?current.detail+' · ':'')+(current.project?'项目：'+current.project+' · ':'')+
-   (elapsed>0&&Number.isFinite(elapsed)&&elapsed<36000?'事件发生于 '+Math.floor(elapsed)+' 秒前':'等待 Agent 事件');
- if(['working','tool','editing'].includes(current.state)&&Date.now()>until){bubble.textContent=current.detail||label; bubble.style.display='block';}
+   (current.at?'上次事件 '+age+' 秒前':'等待 Agent 事件');
+ document.getElementById('events').textContent='Hook 事件：'+(current.event||'暂无')+
+   ' · 本轮 '+(current.eventCount||0)+' 次 · 已用 '+elapsedTask+' 秒'+(stale?' · 完成状态未确认':'');
+ if(active&&Date.now()>until){bubble.textContent=stale?'暂未收到新的 Hook 事件 · 不代表 AI 已完成':(current.detail||label); bubble.style.display='block';}
  else if(Date.now()>until)bubble.style.display='none';}
 window.addEventListener('message',evt=>{const data=evt.data;if(!data||data.type!=='activity')return;
  let next=data.activity;const newEvent=next.at!==seenAt;if(newEvent){seenAt=next.at;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};say(next.detail||map[next.state]||'嗨～')}
@@ -332,6 +340,7 @@ function openPanel() {
       case 'showDesktop': startDesktop(true); break;
       case 'hideDesktop': stopDesktop(); break;
       case 'installHooks': await installHooks(); break;
+      case 'checkLink': await checkLink(); break;
       case 'setState': if (STATES.has(msg.state)) writeActivity(msg.state); break;
       default: break;
     }
