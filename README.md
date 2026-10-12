@@ -1,4 +1,12 @@
-# 🐋 KiroPet · Kiro AI 桌宠 v0.5.4
+# 🐋 KiroPet · Kiro AI 桌宠 v0.5.5
+
+## v0.5.5 贴边探头待机
+
+- 现有边缘吸附与自动收起升级为**鲸鱼娘探头待机**：用已确认的第六版人设原画截取小脑袋，替代 26px 的纯色鲸鱼标签，四个屏幕边缘均保留 56px 的可点击头像。
+- **安静可爱**：约 7 秒偶尔眨眼，闲置显示小爱心；AI 工作中显示进度点，完成后显示小星星，睡觉时显示 zZ。头像位置固定不弹跳，不影响工作状态监测。
+- 鼠标靠近立即展开、离开约 1.2 秒后重新探头；保留拖动、右键菜单、边缘吸附开关与原来的透明窗。
+- Windows WPF 使用 CroppedBitmap，macOS/Linux Tk 使用 PhotoImage 原生裁剪，**无额外运行依赖**；Windows 多显示器、DPI 适配沿用已有方案。Kiro IDE 内置面板不受系统窗吸附影响。
+
 
 ## v0.5.4 桌面与桌腿的画面一致性优化
 
@@ -71,7 +79,7 @@ Kiro/VS Code 兼容插件，不消耗模型积分，不读取聊天/思考内容
 ## 📦 更新安装
 
 1. 打开 Kiro IDE；按 `Ctrl+Shift+P`（macOS 用 `Cmd+Shift+P`）。
-2. 运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.5.4.vsix`。
+2. 运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.5.5.vsix`。
 3. 如果之前装过 v0.1.0，会以相同的 publisher + name 更新；安装后 **Developer: Reload Window**。
 4. 在屏幕右下角找鲸鱼娘；点击 Kiro 底部状态栏的 `鲸鱼娘` 进入控制菜单。
 
