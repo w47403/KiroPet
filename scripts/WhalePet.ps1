@@ -20,6 +20,8 @@ $script:lastEventKey = ''
 $script:bubbleUntil = [DateTime]::UtcNow
 $script:mood = 'idle'
 $script:activityDetail = ''
+$script:lastActivityAt = [DateTime]::UtcNow
+$script:eventCount = 0
 $script:idleName = 'idle'
 $script:idleStarted = $null
 $script:idleNext = [DateTime]::UtcNow.AddSeconds(22)
@@ -410,12 +412,17 @@ $script:monitor.Add_Tick({
         $eventKey = "$($event.at)|$($event.state)|$($event.project)|$($event.detail)"
         $project = [string]$event.project
         $script:activityDetail = [string]$event.detail
+        $script:eventCount = [int]$event.eventCount
+        if ($event.at) {
+          try { $script:lastActivityAt=[DateTimeOffset]::FromUnixTimeMilliseconds([long]$event.at).UtcDateTime } catch { }
+        }
       } else {
         # Compatible with events written by v0.1.x.
         $next = $raw
         $eventKey = $raw
         $project = ''
         $script:activityDetail = ''
+        $script:lastActivityAt = [DateTime]::UtcNow
       }
       if ($eventKey -ne $script:lastEventKey) {
         if ($raw.StartsWith('{') -and $event.phase -eq 'start') { $script:taskActive=$false; $script:workAccentStart=$null }
@@ -511,7 +518,8 @@ function Update-Animation {
   }
   if ([DateTime]::UtcNow -gt $script:bubbleUntil) {
     if ($script:mood -in @('working','tool','editing') -and -not $script:mute) {
-      $script:bubbleText.Text = $(if ($script:activityDetail) { $script:activityDetail } else { @{working='正在处理你的请求';tool='正在调用工具';editing='正在更新文件'}[$script:mood] })
+      $stale=([DateTime]::UtcNow-$script:lastActivityAt).TotalSeconds -gt 180
+      $script:bubbleText.Text = $(if ($stale) { '暂无新 Hook 事件 · 完成状态未确认' } elseif ($script:activityDetail) { $script:activityDetail } else { @{working='正在处理你的请求';tool='正在调用工具';editing='正在更新文件'}[$script:mood] })
       $script:bubble.Visibility = [System.Windows.Visibility]::Visible
     } else { $script:bubble.Visibility = [System.Windows.Visibility]::Collapsed }
   }
