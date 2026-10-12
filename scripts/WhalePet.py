@@ -8,7 +8,7 @@ import sys
 import time
 import tkinter as tk
 from animation_runtime import frame_at, IdleDirector, WorkDirector, DragDirector
-from dock_runtime import snap, hidden_position, ease_out
+from dock_runtime import TAB_EXPOSURE, snap, hidden_position, ease_out
 
 p = argparse.ArgumentParser()
 p.add_argument('--image', required=True)
@@ -84,8 +84,29 @@ folded = False
 dock_position = None
 motion_job = None
 hide_job = None
-tab_id = canvas.create_rectangle(0, 0, 0, 0, fill='#347cab', outline='', state='hidden')
-tab_text = canvas.create_text(0, 0, text='鲸', fill='white', state='hidden')
+# Show the original whale girl's peeking face, not a generic emoji.
+# Tk can crop/subsample existing PNGs without any installed image library.
+def peek_face(index):
+    raw = tk.PhotoImage(file=os.path.join(animation_dir, 'idle', f'{index:02}.png'))
+    crop = tk.PhotoImage(width=216, height=216)
+    crop.tk.call(str(crop), 'copy', str(raw), '-from', 20, 12, 236, 228, '-to', 0, 0)
+    return crop.subsample(4, 4)  # 54x54px
+
+peek_faces = {'smile': peek_face(4), 'open': peek_face(0), 'blink': peek_face(3)}
+tab_id = canvas.create_rectangle(0, 0, 0, 0, fill='#dbeffe', outline='#428abb', width=2, state='hidden')
+tab_avatar = canvas.create_image(0, 0, image=peek_faces['smile'], state='hidden')
+tab_badge = canvas.create_text(0, 0, text='♡', fill='#1f5b91', font=('Arial', 12, 'bold'), state='hidden')
+folded_at = time.monotonic()
+
+def update_peek(now):
+    if not folded: return
+    elapsed = max(0, (now-folded_at) * 1000)
+    blink = elapsed > 1000 and 5000 <= elapsed % 7200 < 5230
+    pose = 'open' if state in ('working', 'tool', 'editing') else 'smile'
+    if state == 'sleep': pose = 'blink'
+    badge = '••' if state in ('working','tool','editing') else '✦' if state == 'done' else 'zZ' if state == 'sleep' else '♡'
+    canvas.itemconfigure(tab_avatar, image=peek_faces['blink' if blink else pose])
+    canvas.itemconfigure(tab_badge, text=badge)
 
 def position(x, y):
     # Use the WM's absolute-position form; '-20' otherwise means right-relative in Tk.
@@ -109,22 +130,30 @@ def unfold(_=None):
     if hide_job is not None: root.after_cancel(hide_job); hide_job = None
     if not folded: return
     folded = False
-    canvas.itemconfigure(tab_id, state='hidden'); canvas.itemconfigure(tab_text, state='hidden')
+    for item in (tab_id, tab_avatar, tab_badge): canvas.itemconfigure(item, state='hidden')
     canvas.itemconfigure(img, state='normal')
     smooth_to(*dock_position)
 
 def fold():
-    global folded, hide_job
+    global folded, hide_job, folded_at
     hide_job = None
     if not dock_edge or not dock_enabled or drag is not None or popup_open: return
     px, py = root.winfo_pointerxy()
     if root.winfo_x() <= px < root.winfo_x()+W and root.winfo_y() <= py < root.winfo_y()+H: return
     folded = True
+    folded_at = time.monotonic()
     canvas.itemconfigure(text_id, text='')
-    bounds = {'left':(W-26,(H-64)//2,W,(H+64)//2), 'right':(0,(H-64)//2,26,(H+64)//2),
-              'top':((W-64)//2,H-26,(W+64)//2,H), 'bottom':((W-64)//2,0,(W+64)//2,26)}[dock_edge]
-    canvas.coords(tab_id,*bounds); canvas.coords(tab_text,(bounds[0]+bounds[2])/2,(bounds[1]+bounds[3])/2)
-    canvas.itemconfigure(tab_id,state='normal'); canvas.itemconfigure(tab_text,state='normal')
+    tab = TAB_EXPOSURE
+    bounds = {'left':(W-tab,(H-74)//2,W,(H+74)//2),
+              'right':(0,(H-74)//2,tab,(H+74)//2),
+              'top':((W-74)//2,H-tab,(W+74)//2,H),
+              'bottom':((W-74)//2,0,(W+74)//2,tab)}[dock_edge]
+    left, top, right, bottom = bounds
+    canvas.coords(tab_id, *bounds)
+    canvas.coords(tab_avatar, (left+right)/2, (top+bottom)/2)
+    canvas.coords(tab_badge, right-9, bottom-11)
+    for item in (tab_id, tab_avatar, tab_badge): canvas.itemconfigure(item, state='normal')
+    update_peek(folded_at)
     smooth_to(*hidden_position(dock_edge,*dock_position,W,H,(0,0,screenw,screenh)))
 
 def schedule_hide(_=None):
@@ -241,7 +270,8 @@ def animate():
     wall = time.monotonic()
     now = animation_now()
     if folded:
-        root.after(250, animate)
+        update_peek(wall)
+        root.after(100, animate)
         return
     if reaction_start is not None and (now - reaction_start) * 1000 >= sum(manifest['clips']['hug']['durations']):
         reaction_start = None

@@ -9,7 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 from animation_runtime import IdleDirector, WorkDirector, DragDirector
-from dock_runtime import snap, hidden_position, ease_out
+from dock_runtime import snap, hidden_position, ease_out, TAB_EXPOSURE
 from status_signal import activity
 
 
@@ -68,10 +68,18 @@ class BehaviorTest(unittest.TestCase):
         area = (-1920,-100,0,980)
         self.assertEqual(snap(-1910,-90,232,266,area),('left',-1920,-100))
         self.assertIsNone(snap(-900,300,232,266,area))
-        self.assertEqual(hidden_position('left',-1920,50,232,266,area),(-2126,50))
-        self.assertEqual(hidden_position('right',-232,50,232,266,area),(-26,50))
-        self.assertEqual(hidden_position('top',-500,-100,232,266,area),(-500,-340))
-        self.assertEqual(hidden_position('bottom',-500,714,232,266,area),(-500,954))
+        self.assertEqual(hidden_position('left',-1920,50,232,266,area),(-2096,50))
+        self.assertEqual(hidden_position('right',-232,50,232,266,area),(-56,50))
+        self.assertEqual(hidden_position('top',-500,-100,232,266,area),(-500,-310))
+        self.assertEqual(hidden_position('bottom',-500,714,232,266,area),(-500,924))
+        self.assertEqual(TAB_EXPOSURE, 56)
+        # Every edge exposes the exact same clickable face strip.
+        for edge in ('left', 'right', 'top', 'bottom'):
+            result = hidden_position(edge, -1920, 0, 232, 266, area)
+            if edge == 'left': self.assertEqual(result[0]+232, -1920+TAB_EXPOSURE)
+            elif edge == 'right': self.assertEqual(result[0], 0-TAB_EXPOSURE)
+            elif edge == 'top': self.assertEqual(result[1]+266, -100+TAB_EXPOSURE)
+            else: self.assertEqual(result[1], 980-TAB_EXPOSURE)
         self.assertEqual(ease_out(0),0); self.assertEqual(ease_out(1),1)
         self.assertGreater(ease_out(.5),.5)
 

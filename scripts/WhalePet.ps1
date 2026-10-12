@@ -152,18 +152,65 @@ $script:folded = $false
 $script:dragging = $false
 $script:hideAt = [DateTime]::MaxValue
 $script:dockArea = $null
+$script:peekExposure = 56  # Visible strip on all 4 edges, in WPF DIPs.
 $script:dockTab = New-Object System.Windows.Controls.Border
-$script:dockTab.Background = [System.Windows.Media.Brushes]::SteelBlue
-$script:dockTab.CornerRadius = [System.Windows.CornerRadius]::new(10)
+$script:dockTab.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(219,239,254))
+$script:dockTab.BorderBrush = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(66,138,187))
+$script:dockTab.BorderThickness = [System.Windows.Thickness]::new(2)
+$script:dockTab.CornerRadius = [System.Windows.CornerRadius]::new(24)
 $script:dockTab.Visibility = [System.Windows.Visibility]::Collapsed
 $script:dockTab.Cursor = [System.Windows.Input.Cursors]::Hand
-$tabText = New-Object System.Windows.Controls.TextBlock
-$tabText.Text = '🐋'
-$tabText.Foreground = [System.Windows.Media.Brushes]::White
-$tabText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
-$tabText.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
-$script:dockTab.Child = $tabText
+$script:peekGrid = New-Object System.Windows.Controls.Grid
+$script:peekPicture = New-Object System.Windows.Controls.Image
+$script:peekPicture.Width = 51; $script:peekPicture.Height = 51
+$script:peekPicture.Stretch = [System.Windows.Media.Stretch]::Uniform
+$script:peekPicture.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
+$script:peekPicture.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+$script:peekPicture.IsHitTestVisible = $false
+# Crop the approved idle face. Blink by swapping sprites, never by bouncing the window.
+$script:peekFaces = @{}
+foreach ($entry in @(@('smile',4),@('open',0),@('blink',3))) {
+  $source = $script:frameCache['idle'][$entry[1]]
+  $crop = [System.Windows.Media.Imaging.CroppedBitmap]::new($source,[System.Windows.Int32Rect]::new(20,12,216,216))
+  $crop.Freeze()
+  $script:peekFaces[$entry[0]] = $crop
+}
+$script:peekPicture.Source = $script:peekFaces['smile']
+[void]$script:peekGrid.Children.Add($script:peekPicture)
+$script:peekBadge = New-Object System.Windows.Controls.TextBlock
+$script:peekBadge.Text = '♡'
+$script:peekBadge.FontFamily = [System.Windows.Media.FontFamily]::new('Microsoft YaHei UI')
+$script:peekBadge.FontSize = 14
+$script:peekBadge.FontWeight = [System.Windows.FontWeights]::Bold
+$script:peekBadge.Foreground = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(31,91,145))
+$script:peekBadge.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Right
+$script:peekBadge.VerticalAlignment = [System.Windows.VerticalAlignment]::Bottom
+$script:peekBadge.Margin = [System.Windows.Thickness]::new(0,0,4,0)
+$script:peekBadge.IsHitTestVisible = $false
+[void]$script:peekGrid.Children.Add($script:peekBadge)
+$script:dockTab.Child = $script:peekGrid
 [void]$script:root.Children.Add($script:dockTab)
+
+function Update-Peek {
+  if (-not $script:folded) { return }
+  $elapsed = [Math]::Max(0,([DateTime]::UtcNow-$script:foldedAt).TotalMilliseconds)
+  $blink = $elapsed -gt 1000 -and ($elapsed % 7200) -ge 5000 -and ($elapsed % 7200) -lt 5230
+  if ($script:mood -in @('working','tool','editing')) {
+    $script:peekBadge.Text = '••'
+    $pose = 'open'
+  } elseif ($script:mood -eq 'done') {
+    $script:peekBadge.Text = '✦'
+    $pose = 'smile'
+  } elseif ($script:mood -eq 'sleep') {
+    $script:peekBadge.Text = 'zZ'
+    $pose = 'blink'
+  } else {
+    $script:peekBadge.Text = '♡'
+    $pose = 'smile'
+  }
+  if ($blink) { $pose = 'blink' }
+  $script:peekPicture.Source = $script:peekFaces[$pose]
+}
 
 function Get-WorkRect {
   $screen = [System.Windows.Forms.Screen]::FromPoint([System.Windows.Forms.Cursor]::Position)
@@ -209,20 +256,22 @@ function Fold-Dock {
   if (-not $script:dockSide -or -not $script:dockEnabled -or $script:dragging -or $script:root.IsMouseOver -or $menu.IsOpen) { return }
   $area = $script:dockArea
   $x = $script:dockX; $y = $script:dockY
-  $script:dockTab.Width = 26; $script:dockTab.Height = 64
+  $tab = $script:peekExposure
+  $script:dockTab.Width = $tab; $script:dockTab.Height = 74
   $script:dockTab.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
   $script:dockTab.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
   switch ($script:dockSide) {
-    'left' { $x=$area.Left-$script:window.Width+26; $script:dockTab.HorizontalAlignment='Right' }
-    'right' { $x=$area.Right-26; $script:dockTab.HorizontalAlignment='Left' }
-    'top' { $y=$area.Top-$script:window.Height+26; $script:dockTab.VerticalAlignment='Bottom'; $script:dockTab.Width=64; $script:dockTab.Height=26 }
-    'bottom' { $y=$area.Bottom-26; $script:dockTab.VerticalAlignment='Top'; $script:dockTab.Width=64; $script:dockTab.Height=26 }
+    'left' { $x=$area.Left-$script:window.Width+$tab; $script:dockTab.HorizontalAlignment='Right' }
+    'right' { $x=$area.Right-$tab; $script:dockTab.HorizontalAlignment='Left' }
+    'top' { $y=$area.Top-$script:window.Height+$tab; $script:dockTab.VerticalAlignment='Bottom'; $script:dockTab.Width=74; $script:dockTab.Height=$tab }
+    'bottom' { $y=$area.Bottom-$tab; $script:dockTab.VerticalAlignment='Top'; $script:dockTab.Width=74; $script:dockTab.Height=$tab }
   }
   $script:folded = $true
   $script:foldedAt = [DateTime]::UtcNow
   $script:bubble.Visibility = [System.Windows.Visibility]::Collapsed
   $script:dockTab.Visibility = [System.Windows.Visibility]::Visible
-  $script:dockTab.ToolTip = $(if ($script:activityDetail) { $script:activityDetail } else { '鲸鱼娘 · 鼠标靠近展开，拖动移出边缘' })
+  $script:dockTab.ToolTip = $(if ($script:activityDetail) { $script:activityDetail } else { '鲸鱼娘探头中 ♡ · 鼠标靠近展开' })
+  Update-Peek
   Move-Smooth $x $y
   $script:hideAt = [DateTime]::MaxValue
 }
@@ -398,6 +447,7 @@ $script:animate.Interval = [TimeSpan]::FromMilliseconds(80)
 function Update-Animation {
   if ([DateTime]::UtcNow -ge $script:hideAt) { Fold-Dock }
   if ($script:folded) {
+    Update-Peek
     if (([DateTime]::UtcNow-$script:foldedAt).TotalMilliseconds -ge 340) { $script:picture.Visibility = [System.Windows.Visibility]::Hidden }
     return
   }

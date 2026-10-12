@@ -38,16 +38,28 @@ if (-not $script:dockSide -or $script:dockX -ne -1920 -or $script:dockY -ne 0) {
 Move-Smooth $script:dockX $script:dockY $true
 Fold-Dock
 if (-not $script:folded -or $script:dockTab.Visibility -ne 'Visible') { throw 'Dock tab failed' }
+if ($script:dockTab.Width -ne 56 -or $script:dockTab.Height -ne 74) { throw 'Peek face strip size is wrong' }
+if (-not $script:peekPicture.Source.IsFrozen -or $script:peekPicture.Source.PixelWidth -ne 216) { throw 'Peeking face was not cropped from approved art' }
+$script:mood='idle'; Update-Peek
+if ($script:peekBadge.Text -ne [string][char]0x2661) { throw 'Peeking idle heart failed' }
+$script:foldedAt=[DateTime]::UtcNow.AddMilliseconds(-5100); Update-Peek
+if (-not [object]::ReferenceEquals($script:peekPicture.Source,$script:peekFaces['blink'])) { throw 'Peeking blink never triggered' }
+$script:mood='working'; Update-Peek
+if ($script:peekBadge.Text -ne ([string][char]0x2022+[string][char]0x2022)) { throw 'Folded AI working badge failed' }
+$script:mood='done'; Update-Peek
+if ($script:peekBadge.Text -ne [string][char]0x2726) { throw 'Folded completion badge failed' }
+$script:mood='idle'
+
 # Seek the exact clocks applied to Window.Left/Top. CI has no reliable render cadence.
 foreach ($clock in $script:motionClocks) {
   $clock.Controller.SeekAlignedToLastTick([TimeSpan]::FromMilliseconds(100),[System.Windows.Media.Animation.TimeSeekOrigin]::BeginTime)
 }
 $middle=$script:window.Left
-if ($middle -ge -1920 -or $middle -le (-1920-$script:window.Width+26)) { throw "No intermediate animation position: $middle" }
+if ($middle -ge -1920 -or $middle -le (-1920-$script:window.Width+56)) { throw "No intermediate animation position: $middle" }
 foreach ($clock in $script:motionClocks) {
   $clock.Controller.SeekAlignedToLastTick([TimeSpan]::FromMilliseconds(400),[System.Windows.Media.Animation.TimeSeekOrigin]::BeginTime)
 }
-if ([Math]::Abs($script:window.Left-(-1920-$script:window.Width+26)) -gt 1) { throw 'Hide animation did not settle' }
+if ([Math]::Abs($script:window.Left-(-1920-$script:window.Width+56)) -gt 1) { throw 'Hide animation did not settle' }
 Expand-Dock $true
 if ($script:folded -or $script:window.Left -ne -1920 -or $script:window.Top -ne 0) { throw 'Dock reveal failed' }
 Write-Output 'WPF snap, cubic animation setup, folded tab and reveal passed on negative screen coordinates.'
