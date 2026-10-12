@@ -260,7 +260,10 @@ def monitor():
             activity_detail = str(payload.get('detail') or '')[:160]
             msg = {'working':'Kiro 正在处理…', 'tool':'Kiro 正在调用工具…',
                    'editing':'Kiro 更新了文件～', 'done':'任务完成啦！', 'idle':'休息一会儿～', 'sleep':'呼噜呼噜～'}.get(state)
-            if msg and not folded: say(activity_detail or msg, 2)
+            if state == 'done' and folded:
+                unfold()
+                if dock_edge: root.after(9000, schedule_hide)
+            if msg and not folded: say(activity_detail or msg, 5 if state == 'done' else 2)
     except (OSError, ValueError, TypeError):
         pass
     root.after(700, monitor)
