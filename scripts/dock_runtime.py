@@ -1,4 +1,5 @@
 """Screen-edge geometry and easing without GUI dependencies."""
+TAB_EXPOSURE = 56  # Same visible peeking-head width as WPF.
 def ease_out(t):
     t = max(0, min(1, t))
     return 1 - (1-t) ** 3
@@ -20,7 +21,7 @@ def snap(x, y, width, height, area, threshold=36):
     return edge, x, y
 
 
-def hidden_position(edge, x, y, width, height, area, tab=26):
+def hidden_position(edge, x, y, width, height, area, tab=TAB_EXPOSURE):
     left, top, right, bottom = area
     if edge == 'left': x = left-width+tab
     elif edge == 'right': x = right-tab
