@@ -1,4 +1,4 @@
-"""Furniture-lock regression tests with real frames and synthetic fixtures."""
+"""Furniture-lock regression tests using the packaged sprite drawings."""
 from pathlib import Path
 import shutil
 import sys
@@ -19,7 +19,7 @@ class LockWorkDeskTest(unittest.TestCase):
     def test_mask_keeps_face_hands_and_lower_body_clear(self):
         mask = table_mask(119, 218)
         self.assertEqual(mask.getpixel((100, 140)), 0)  # face
-        self.assertEqual(mask.getpixel((141, 208)), 0)  # keyboard hands
+        self.assertEqual(mask.getpixel((141, 208)), 0)  # typing hands
         self.assertEqual(mask.getpixel((120, 290)), 0)  # shoes
         self.assertEqual(mask.getpixel((110, 229)), 255)  # table front
         self.assertEqual(mask.getpixel((37, 290)), 255)  # left leg
@@ -35,16 +35,27 @@ class LockWorkDeskTest(unittest.TestCase):
                 target = dest / name / src.name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(src, target)
-                faces[(name, index)] = Image.open(src).convert('RGBA').crop((40, 50, 195, 165)).tobytes()
-            # The CI source directory may already be normalized; introduce a\n            # realistic wood-texture defect so the test always checks repair.\n            broken_path = dest / 'tool' / '01.png'\n            frame = Image.open(broken_path).convert('RGBA')\n            frame.putpixel((110, 229), (205, 141, 79, 255))\n            frame.save(broken_path)\n            changed = lock_desks(dest, verbose=False)
-            self.assertGreater(changed, 0)
-            ref = Image.open(dest / CANONICAL[0] / '00.png').convert('RGBA')
-            mask = table_mask(*desk_anchor(ref))
+                with Image.open(src) as image:
+                    faces[(name, index)] = image.convert('RGBA').crop(
+                        (40, 50, 195, 165)).tobytes()
+            # Make a predictable defect even when CI preprocessed all source files.
+            broken = dest / 'tool' / '01.png'
+            with Image.open(broken) as image:
+                frame = image.convert('RGBA')
+            frame.putpixel((110, 229), (205, 141, 79, 255))
+            frame.save(broken)
+            self.assertGreater(lock_desks(dest, verbose=False), 0)
+
+            with Image.open(dest / CANONICAL[0] / '00.png') as image:
+                reference = image.convert('RGBA')
+            mask = table_mask(*desk_anchor(reference))
             for name, index in ALL:
-                frame = Image.open(dest / name / f'{index:02}.png').convert('RGBA')
-                self.assertEqual(frame.crop((40, 50, 195, 165)).tobytes(), faces[(name, index)])
-                self.assertIsNone(ImageChops.difference(
-                    Image.composite(ref, frame, mask), frame).getbbox(), (name, index))
+                with Image.open(dest / name / f'{index:02}.png') as image:
+                    frame = image.convert('RGBA')
+                self.assertEqual(frame.crop((40, 50, 195, 165)).tobytes(),
+                                 faces[(name, index)])
+                self.assertEqual(Image.composite(reference, frame, mask).tobytes(),
+                                 frame.tobytes(), (name, index))
             self.assertEqual(lock_desks(dest, verbose=False), 0)
 
 
