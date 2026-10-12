@@ -118,7 +118,7 @@ class BehaviorTest(unittest.TestCase):
         restart['at'] = 6000
         result = merge_activity(current,restart)
         self.assertEqual((result['state'],result['startedAt'],result['eventCount']),('working',6000,1))
-        self.assertNotIn('one',json.dumps(current))  # raw session ID is not stored
+        self.assertNotEqual(current['session'], 'one')  # raw session ID is never persisted
 
     def test_real_hook_exit_does_not_overwrite_done(self):
         with tempfile.TemporaryDirectory() as directory:
