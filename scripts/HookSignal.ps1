@@ -38,7 +38,34 @@ try {
     $detail = '工具已返回，继续处理' + $(if ($tool) { ' · ' + $tool } else { '' })
   }
   $phase = if ($Phase) { $Phase } elseif ($context.hook_event_name -ieq 'PromptSubmit') { 'start' } elseif ($context.hook_event_name -ieq 'AgentStop') { 'finish' } else { 'continue' }
-  $payload = @{state=$State; phase=$phase; project=$Project; detail=$detail; tool=$tool; file=$file; at=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()} | ConvertTo-Json -Compress
+  $sessionKey = ''
+  $session = [string]$context.session_id
+  if ($session) {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try { $hash = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($session))
+      $sessionKey = -join @($hash[0..5] | ForEach-Object { $_.ToString('x2') })
+    } finally { $sha256.Dispose() }
+  }
+  $at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  $payload = @{state=$State; phase=$phase; project=$Project; detail=$detail; tool=$tool; file=$file
+    event=[string]$context.hook_event_name; session=$sessionKey; at=$at}
+  $previous = $null
+  if (Test-Path -LiteralPath $StatePath) {
+    try { $previous = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+  }
+  $same = $previous -and $previous.project -eq $Project -and
+    (-not $sessionKey -or -not $previous.session -or $previous.session -eq $sessionKey)
+  if ($same -and $previous.state -eq 'done' -and $phase -ne 'start' -and $State -ne 'done') {
+    exit 0 # Ignore a delayed tool callback after the terminal AgentStop.
+  }
+  if ($same -and $phase -ne 'start') {
+    $payload.startedAt = if ($previous.startedAt) { [long]$previous.startedAt } elseif ($previous.at) { [long]$previous.at } else { $at }
+    $payload.eventCount = [int]$previous.eventCount + 1
+  } else {
+    $payload.startedAt = $at
+    $payload.eventCount = 1
+  }
+  $payload = $payload | ConvertTo-Json -Compress
   $tmp = "$StatePath.$PID.tmp"
   [System.IO.File]::WriteAllText($tmp, $payload, (New-Object System.Text.UTF8Encoding($false)))
   Move-Item -LiteralPath $tmp -Destination $StatePath -Force
