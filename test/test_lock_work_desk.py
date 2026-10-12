@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -36,7 +36,7 @@ class LockWorkDeskTest(unittest.TestCase):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(src, target)
                 faces[(name, index)] = Image.open(src).convert('RGBA').crop((40, 50, 195, 165)).tobytes()
-            changed = lock_desks(dest, verbose=False)
+            # The CI source directory may already be normalized; introduce a\n            # realistic wood-texture defect so the test always checks repair.\n            broken_path = dest / 'tool' / '01.png'\n            frame = Image.open(broken_path).convert('RGBA')\n            frame.putpixel((110, 229), (205, 141, 79, 255))\n            frame.save(broken_path)\n            changed = lock_desks(dest, verbose=False)
             self.assertGreater(changed, 0)
             ref = Image.open(dest / CANONICAL[0] / '00.png').convert('RGBA')
             mask = table_mask(*desk_anchor(ref))
