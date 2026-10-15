@@ -6,7 +6,8 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
-const {eventProgress, isManagedHook, inspectHooks} = require('./event-health');
+const {eventProgress, isManagedHook, inspectHooks, disableOwnedHook} = require('./event-health');
+const {SessionMonitor} = require('./session-monitor');
 
 let extContext;
 let child = null;
@@ -15,6 +16,8 @@ let panel = null;
 let activityPath = null;
 let refreshTimer = null;
 let lastDesktopError = '';
+let sessionMonitor = null;
+let sessionActivity = null;
 const P = 'kiroWhalePet.';
 const STATES = new Set(['idle', 'working', 'tool', 'editing', 'done', 'sleep']);
 const EMOJI = {idle: '$(smiley)', working: '$(sync~spin)', tool: '$(tools)', editing: '$(edit)', done: '$(check)', sleep: '$(moon)'};
@@ -38,9 +41,12 @@ function readActivity() {
     const obj = JSON.parse(fs.readFileSync(localStateFile(), 'utf8'));
     return {state: STATES.has(obj.state) ? obj.state : 'idle',
       project: String(obj.project || '').slice(0, 80), detail: String(obj.detail || '').replace(/[\x00-\x1f]/g,' ').slice(0, 160),
+      reply: String(obj.reply || '').slice(0, 180), replyUntil: Number(obj.replyUntil) || 0,
       phase: ['start','continue','finish'].includes(obj.phase) ? obj.phase : '',
       at: Number(obj.at) || 0, startedAt: Number(obj.startedAt) || Number(obj.at) || 0,
-      eventCount: Number(obj.eventCount) || 0, event: String(obj.event || '').slice(0,40)};
+      eventCount: Number(obj.eventCount) || 0, event: String(obj.event || '').slice(0,40),
+      source: obj.source === 'session' ? 'session' : obj.event === 'Manual' ? 'manual' : 'hook',
+      session: String(obj.session || ''), contextUsage: obj.contextUsage, activeSessions: obj.activeSessions};
   } catch (_) { return {state: 'idle', project: '', at: 0}; }
 }
 function writeActivity(state, project = '', detail = '', phase = '') {
@@ -56,7 +62,12 @@ function writeActivity(state, project = '', detail = '', phase = '') {
   } catch (err) { vscode.window.showWarningMessage('鲸鱼娘状态写入失败：' + err.message); }
 }
 function refresh() {
-  const activity = readActivity();
+  let activity = readActivity();
+  // Once a live local session is observed, legacy Hooks must not overwrite it.
+  if (sessionActivity && activity.source === 'hook') {
+    persistSessionActivity(sessionActivity);
+    activity = readActivity();
+  }
   const progress = eventProgress(activity);
   const text = progress.stale ? '$(warning)' : (EMOJI[activity.state] || EMOJI.idle);
   if (statusItem) {
@@ -64,6 +75,44 @@ function refresh() {
     statusItem.tooltip = `鲸鱼娘 · ${activity.detail || activity.state}${activity.project ? ' · ' + activity.project : ''}\n${progress.label} · 已接收 ${progress.eventCount} 条事件 · ${progress.durationSeconds}s\n点击打开控制菜单`;
   }
   if (panel) panel.webview.postMessage({type: 'activity', activity});
+}
+function persistSessionActivity(activity) {
+  try {
+    const tmp = path.join(dataDir(), `session.${process.pid}.tmp`);
+    fs.writeFileSync(tmp, JSON.stringify(activity), 'utf8');
+    fs.renameSync(tmp, localStateFile());
+  } catch (err) { console.warn('KiroPet session state write failed:', err.code); }
+}
+function startSessionMonitor() {
+  if (sessionMonitor) sessionMonitor.dispose();
+  sessionMonitor = null;
+  sessionActivity = null;
+  if (readActivity().source === 'session') writeActivity('idle', '', '等待新的 Kiro 会话记录');
+  if (!settings().get('localSessions.enabled', true)) return;
+  for (const folder of getProjectFolders()) {
+    try { disableOwnedHook(hookPath(folder)); }
+    catch (err) { console.warn('KiroPet Hook migration failed:', err.message); }
+  }
+  const configured = settings().get('localSessions.directory', '').trim();
+  sessionMonitor = new SessionMonitor({
+    root: configured || path.join(os.homedir(), '.kiro', 'sessions'),
+    workspaces: getProjectFolders().map(folder => folder.uri.fsPath),
+    showReply: settings().get('localSessions.showReplyPreview', true),
+    onActivity: activity => { sessionActivity = activity; persistSessionActivity(activity); refresh(); }
+  }).start();
+}
+async function checkSessions() {
+  if (!sessionMonitor) return vscode.window.showInformationMessage('本地会话监听已关闭。可在设置中开启 kiroWhalePet.localSessions.enabled。');
+  await sessionMonitor.poll();
+  const status = sessionMonitor.status();
+  const channel = vscode.window.createOutputChannel('鲸鱼娘 · 本地会话诊断');
+  extContext.subscriptions.push(channel);
+  channel.appendLine(`监听目录：${status.root}\n目录存在：${status.rootExists}\n当前本地项目：${getProjectFolders().length}\n匹配会话：${status.matched}\n不支持的格式：${status.unsupported}\n启动后事件：${status.records}\n读取失败：${status.errors}\n无效记录：${status.malformed}\n超大记录：${status.oversized}`);
+  channel.appendLine(`文件通知：${status.watching ? '已连接' : '不可用，使用低频补偿'}；补偿间隔：${status.fallbackMs}ms。通知合并窗口 250ms，只读取已落盘记录，不保证逐 token 实时。`);
+  channel.appendLine('只监听当前工作区。启动时跳过已有历史；没有新记录不代表已完成。');
+  channel.appendLine('近期事件（不含聊天正文）：');
+  for (const event of status.recent) channel.appendLine(`${new Date(event.at).toLocaleString()}  ${event.event} → ${event.state}`);
+  channel.show(true);
 }
 function isRunning() { return !!child && child.exitCode === null && !child.killed; }
 function stopDesktop() {
@@ -158,6 +207,10 @@ function buildHooks(projectName) {
 }
 function recognizedHook(data) { return isManagedHook(data); }
 async function installForFolders(folders, silent = false) {
+  if (settings().get('localSessions.enabled', true)) {
+    if (!silent) vscode.window.showInformationMessage('当前使用无钩子的本地会话监听，无需安装 Agent Hooks。');
+    return;
+  }
   if (!folders.length) return vscode.window.showWarningMessage('请先在 Kiro 打开一个本地项目文件夹。');
   if (!silent) {
     const answer = await vscode.window.showInformationMessage(
@@ -271,7 +324,7 @@ function htmlFor(webview) {
 </style></head><body>
 <header><span>🐋 鲸鱼娘</span><span class="tag" id="status">待机中</span></header>
 <div id="stage" title="点击摸摸头"><div id="bubble">嗨～一起写代码吧！</div><img id="pet" src="${uri}" alt="原创鲸鱼娘立绘"></div>
-<div id="activity">正在准备…</div><div id="events" style="font-size:12px;text-align:center;opacity:.8;margin:6px 0">等待真实 Hook 事件…</div>
+<div id="activity">正在准备…</div><div id="events" style="font-size:12px;text-align:center;opacity:.8;margin:6px 0">等待 Kiro 本地事件…</div>
 <div class="buttons">
 <button data-action="showDesktop">打开桌面悬浮窗</button>
 <button class="secondary" data-action="hideDesktop">关闭悬浮窗</button>
@@ -281,7 +334,7 @@ function htmlFor(webview) {
 <button class="secondary" data-state="done">完成啦</button>
 <button class="secondary" data-state="idle">待机</button>
 <button class="secondary" data-state="sleep">休息</button>
-<button data-action="installHooks">开启项目联动</button>
+<button data-action="checkSessions">诊断本地会话监听</button>
  <button class="secondary" data-action="checkLink">诊断事件联动</button>
 </div>
 <p>关闭这个面板后，随时按 Ctrl/Cmd + Shift + P，运行「鲸鱼娘：打开 Kiro 内桌宠面板」。状态来自 Agent 事件，不代表真实 token 数量或 AI 内部思考进度。</p>
@@ -296,7 +349,7 @@ function preload(name){const clip=manifest.clips[name];if(!clip)return;for(const
 function animate(){if(document.hidden)return;const frame=player.sample(reduced.matches);preload(frame.name);if(frame.path!==lastFrame){pet.src=frame.path;lastFrame=frame.path;}frameTimer=setTimeout(animate,80);}
 document.addEventListener('visibilitychange',()=>{clearTimeout(frameTimer);if(document.hidden){player.pause();}else{player.resume();animate();draw();}});
 preload('idle');animate();
-function say(text){bubble.textContent=text;until=Date.now()+2800;bubble.style.display='block'}
+function say(text,ms=2800){bubble.textContent=text;until=Date.now()+ms;bubble.style.display='block'}
 pet.draggable=false;stage.style.touchAction='none';stage.style.userSelect='none';let press=null;
 stage.addEventListener('pointerdown',e=>{if(e.button!==0||press)return;press={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};stage.setPointerCapture(e.pointerId);});
 stage.addEventListener('pointermove',e=>{if(!press||press.id!==e.pointerId)return;if(!press.moved&&Math.abs(e.clientX-press.x)+Math.abs(e.clientY-press.y)>=8){press.moved=true;player.beginDrag();preload('drag');}});
@@ -315,12 +368,14 @@ function draw(){if(document.hidden)return;let label={idle:'💤 待机中',worki
  const elapsedTask=started>0?Math.max(0,Math.floor((Date.now()-started)/1000)):0;
  document.getElementById('activity').textContent=(current.detail?current.detail+' · ':'')+(current.project?'项目：'+current.project+' · ':'')+
    (current.at?'上次事件 '+age+' 秒前':'等待 Agent 事件');
- document.getElementById('events').textContent='Hook 事件：'+(current.event||'暂无')+
-   ' · 本轮 '+(current.eventCount||0)+' 次 · 已用 '+elapsedTask+' 秒'+(stale?' · 完成状态未确认':'');
- if(active&&Date.now()>until){bubble.textContent=stale?'暂未收到新的 Hook 事件 · 不代表 AI 已完成':(current.detail||label); bubble.style.display='block';}
+ document.getElementById('events').textContent=(current.source==='session'?'本地会话：':'事件：')+(current.event||'暂无')+
+   ' · 本轮 '+(current.eventCount||0)+' 次 · 已用 '+elapsedTask+' 秒'+(stale?' · 完成状态未确认':'')+
+   (typeof current.contextUsage==='number'?' · 上下文 '+current.contextUsage.toFixed(1)+'%':'')+
+   (current.activeSessions>1?' · '+current.activeSessions+' 个会话处理中':'');
+ if(active&&Date.now()>until){bubble.textContent=stale?'暂未收到新的 Kiro 记录 · 不代表 AI 已完成':(current.detail||label); bubble.style.display='block';}
  else if(Date.now()>until)bubble.style.display='none';}
 window.addEventListener('message',evt=>{const data=evt.data;if(!data||data.type!=='activity')return;
- let next=data.activity;const newEvent=next.at!==seenAt;if(newEvent){seenAt=next.at;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};say(next.detail||map[next.state]||'嗨～')}
+ let next=data.activity;const key=JSON.stringify([next.at,next.state,next.reply,next.replyUntil]);const newEvent=key!==seenAt;if(newEvent){seenAt=key;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};const reply=next.reply&&next.replyUntil>Date.now();say(reply?'回答 · '+next.reply:next.detail||map[next.state]||'嗨～',reply?Math.min(8000,next.replyUntil-Date.now()):2800)}
  current=next;player.setState(next.state,newEvent&&(next.state==='done'||next.phase==='start'));preload(player.sample(reduced.matches).name);draw();});
 setInterval(draw,500);vscode.postMessage({type:'ready'});
 </script></body></html>`;
@@ -341,6 +396,7 @@ function openPanel() {
       case 'hideDesktop': stopDesktop(); break;
       case 'installHooks': await installHooks(); break;
       case 'checkLink': await checkLink(); break;
+      case 'checkSessions': await checkSessions(); break;
       case 'setState': if (STATES.has(msg.state)) writeActivity(msg.state); break;
       default: break;
     }
@@ -360,6 +416,7 @@ async function openMenu() {
     {label:'$(edit) 修改文件', fn:()=>writeActivity('editing')},
     {label:'$(moon) 休息', fn:()=>writeActivity('sleep')},
     {label:'$(pulse) 检查联动与完成事件', fn:checkLink},
+    {label:'$(eye) 诊断本地会话监听（方案 A）', fn:checkSessions},
     {label:'$(plug) 为当前项目安装 Agent 联动', fn:installHooks},
     {label:'$(files) 为所有已打开项目安装 Agent 联动', fn:installHooksAll},
     {label:'$(trash) 移除当前项目联动', fn:removeHooks},
@@ -391,18 +448,25 @@ function activate(context) {
   });
   register('installHooks', installHooks);
   register('checkLink', checkLink);
+  register('checkSessions', checkSessions);
   register('installHooksAll', installHooksAll);
   register('removeHooks', removeHooks);
   register('toggleAutoStart', toggleAutoStart);
   refreshTimer = setInterval(refresh, 900);
   context.subscriptions.push({dispose:()=>{clearInterval(refreshTimer);refreshTimer=null;}});
+  startSessionMonitor();
+  context.subscriptions.push({dispose:()=>sessionMonitor?.dispose()});
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+    if (event.affectsConfiguration('kiroWhalePet.localSessions')) startSessionMonitor();
+  }));
   // Existing generated hooks can be older than the extension itself.
-  upgradeOwnedHooks();
+  if (!settings().get('localSessions.enabled', true)) upgradeOwnedHooks();
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(evt => {
-    if (settings().get('autoInstallHooksNewProjects',false)) installForFolders(evt.added.filter(w=>w.uri.scheme==='file'), true);
+    startSessionMonitor();
+    if (!settings().get('localSessions.enabled', true) && settings().get('autoInstallHooksNewProjects',false)) installForFolders(evt.added.filter(w=>w.uri.scheme==='file'), true);
   }));
   refresh();
   if (settings().get('autoStart',true)) startDesktop();
 }
-function deactivate() { stopDesktop(); if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;} }
+function deactivate() { sessionMonitor?.dispose(); stopDesktop(); if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;} }
 module.exports={activate,deactivate};

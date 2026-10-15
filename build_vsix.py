@@ -4,8 +4,16 @@ from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 from xml.sax.saxutils import escape
 import json
+import sys
 
 ROOT = Path(__file__).resolve().parent
+# Keep local packages consistent with CI: raw source drawings have desk drift.
+sys.path.insert(0, str(ROOT / 'scripts'))
+from stabilize_work_frames import stabilize_frames
+from lock_work_desk import lock_desks
+
+stabilize_frames()
+lock_desks()
 p = json.loads((ROOT / 'package.json').read_text(encoding='utf8'))
 out = ROOT.parent / f"{p['name']}-{p['version']}.vsix"
 manifest = f'''<?xml version="1.0" encoding="utf-8"?>
@@ -46,7 +54,7 @@ content_types = '''<?xml version="1.0" encoding="utf-8"?>
   <Override PartName="/extension.vsixmanifest" ContentType="text/xml" />
 </Types>
 '''
-files = ['package.json', 'src/extension.js', 'src/animation-player.js', 'src/event-health.js', 'scripts/WhalePet.ps1', 'scripts/WhalePet.py', 'scripts/animation_runtime.py', 'scripts/HookSignal.ps1', 'scripts/HookSignal.sh', 'assets/whale-girl.png', 'assets/icon.png', 'README.md', 'LICENSE']
+files = ['package.json', 'src/extension.js', 'src/animation-player.js', 'src/event-health.js', 'src/session-monitor.js', 'scripts/WhalePet.ps1', 'scripts/WhalePet.py', 'scripts/animation_runtime.py', 'scripts/HookSignal.ps1', 'scripts/HookSignal.sh', 'assets/whale-girl.png', 'assets/icon.png', 'README.md', 'LICENSE']
 files += [f'assets/moods/{name}.png' for name in ('idle','happy','hug','sleep','done')]
 files += ['scripts/status_signal.py', 'scripts/dock_runtime.py']
 files += [str(file.relative_to(ROOT)).replace('\\', '/') for file in (ROOT / 'assets' / 'animations').rglob('*')

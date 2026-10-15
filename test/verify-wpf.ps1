@@ -9,6 +9,7 @@ $verification = @'
 
 $destination = Join-Path (Split-Path -Parent (Split-Path -Parent $AssetPath)) 'output/wpf-validation'
 [void][System.IO.Directory]::CreateDirectory($destination)
+if ($script:frameCache.Count -ne $script:manifest.clips.PSObject.Properties.Name.Count) { throw 'All clips must be decoded before playback' }
 foreach ($name in $script:manifest.clips.PSObject.Properties.Name) {
   Switch-Art $name $true
   if ($script:frameCache[$name].Count -ne 8) { throw "Expected 8 WPF frames: $name" }
@@ -71,8 +72,20 @@ Update-Animation
 if ($script:clipName -ne 'work_start') { throw 'Expected task setup' }
 $script:taskStart=[DateTime]::UtcNow.AddMilliseconds(-2000)
 $beforeTask=$script:taskStart
-$script:mood='tool'; Switch-Art 'tool'; Update-Animation
+Update-Animation
+$beforeFrame=$script:picture.Source
+$beforeIndex=$script:lastFrameIndex
+$script:mood='tool'; Switch-Art 'tool'
+if (-not [object]::ReferenceEquals($beforeFrame,$script:picture.Source)) { throw 'Tool event flashed an unrelated first frame during setup' }
+Update-Animation
 if ($script:clipName -ne 'work_start' -or $script:taskStart -ne $beforeTask) { throw 'Tool event restarted setup' }
+if ($script:lastFrameIndex -ne $beforeIndex) { throw 'Tool event changed setup progress' }
+foreach ($state in @('editing','working','tool','working')) {
+  $beforeFrame=$script:picture.Source
+  $script:mood=$state; Switch-Art $state
+  if (-not [object]::ReferenceEquals($beforeFrame,$script:picture.Source)) { throw 'Rapid work events flashed frame zero' }
+  Update-Animation
+}
 $script:taskStart=[DateTime]::UtcNow.AddMilliseconds(-6000)
 $script:mood='working'; Switch-Art 'working'; Update-Animation
 if ($script:clipName -ne 'working') { throw 'Setup failed to enter working loop' }
@@ -112,6 +125,15 @@ End-PetDrag
 Update-Animation
 if ($script:clipName -ne 'done' -or $script:lastFrameIndex -ne 0) { throw 'New completion did not resume after drag' }
 Write-Output 'WPF collar drag loops, pauses task timeline, and resumes newly received work events.'
+$replyEvent = @{state='done'; source='session'; phase='finish'; at=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); detail='Completed'; reply='Latest visible answer'; replyUntil=[DateTimeOffset]::UtcNow.AddSeconds(8).ToUnixTimeMilliseconds()}
+[System.IO.File]::WriteAllText($StatePath,($replyEvent | ConvertTo-Json))
+Update-Activity
+if ($script:bubbleText.Text -notlike '*Latest visible answer') { throw 'Completion hid the answer excerpt' }
+if (($script:bubbleUntil-[DateTime]::UtcNow).TotalSeconds -lt 6) { throw 'Answer reading time is too short' }
+$script:bubbleUntil=[DateTime]::UtcNow.AddSeconds(-1)
+Update-Animation
+if ($script:bubble.Visibility -ne 'Collapsed') { throw 'Completed answer bubble did not close' }
+Write-Output 'WPF answer excerpt survives completion and expires without reviving the bubble.'
 $script:animate.Stop()
 $script:monitor.Stop()
 $script:window.Close()

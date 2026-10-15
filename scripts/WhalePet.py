@@ -246,7 +246,7 @@ def monitor():
     try:
         with open(a.state, encoding='utf-8') as f:
             payload = json.load(f)
-        current = (payload.get('state', 'idle'), payload.get('at'), payload.get('detail'))
+        current = (payload.get('state', 'idle'), payload.get('at'), payload.get('detail'), payload.get('reply'), payload.get('replyUntil'))
         if current != last_state:
             last_state = current
             next_state = current[0] if current[0] in manifest['clips'] else 'idle'
@@ -264,6 +264,9 @@ def monitor():
                 unfold()
                 if dock_edge: root.after(9000, schedule_hide)
             if msg and not folded: say(activity_detail or msg, 5 if state == 'done' else 2)
+            remaining = (float(payload.get('replyUntil') or 0) - time.time()*1000) / 1000
+            if payload.get('reply') and remaining > 0 and not folded:
+                say('回答 · ' + str(payload['reply'])[:90], min(8, remaining))
     except (OSError, ValueError, TypeError):
         pass
     root.after(700, monitor)

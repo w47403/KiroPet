@@ -11,8 +11,8 @@ function eventProgress(activity, now = Date.now()) {
   return {
     active, stale, durationSeconds,
     eventCount: Math.max(0, Number(activity?.eventCount) || 0),
-    label: stale ? '暂未收到新的 Hook 事件，是否完成尚未确认' :
-      activity?.state === 'done' ? 'AgentStop 已确认任务完成' :
+    label: stale ? '暂未收到新的 Kiro 事件，是否完成尚未确认' :
+      activity?.state === 'done' ? (activity.source === 'session' ? '本地 turn_end 已确认本轮完成' : activity.event === 'Manual' ? '手动完成状态' : 'AgentStop 已确认任务完成') :
       active ? '等待 Kiro 后续事件' : '等待新任务'
   };
 }
@@ -36,4 +36,17 @@ function inspectHooks(folders, readConfig) {
     } catch (_) { return {folder,status:'invalid'}; }
   });
 }
-module.exports={eventProgress,isManagedHook,inspectHooks};
+function disableOwnedHook(file) {
+  const fs = require('fs');
+  const path = require('path');
+  if (!fs.existsSync(file)) return null;
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!isManagedHook(data)) return null;
+  // Keep a recoverable copy outside the directory Kiro scans for hooks.
+  const folder = path.join(path.dirname(path.dirname(file)), 'whale-pet-backups');
+  fs.mkdirSync(folder, {recursive: true});
+  const backup = path.join(folder, `${path.basename(file)}.${require('crypto').randomUUID()}.disabled`);
+  fs.renameSync(file, backup);
+  return backup;
+}
+module.exports={eventProgress,isManagedHook,inspectHooks,disableOwnedHook};

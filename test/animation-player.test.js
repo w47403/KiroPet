@@ -154,7 +154,7 @@ test('each rice animation is selectable, finishes once, and holds its quiet rest
 
 test('webview uses frame player and its emitted inline script parses', () => {
   const code = fs.readFileSync(path.join(root, 'src/extension.js'), 'utf8');
-  const context = {module: {exports: {}}, require: name => name === 'vscode' ? {Uri: {file: file => file}} : name === './event-health' ? require('../src/event-health') : require(name)};
+  const context = {module: {exports: {}}, require: name => name === 'vscode' ? {Uri: {file: file => file}} : name.startsWith('./') ? require(path.join(root, 'src', name)) : require(name)};
   vm.runInNewContext(code + '\nextContext={extensionPath:' + JSON.stringify(root) + '};module.exports.render=htmlFor;', context);
   const html = context.module.exports.render({cspSource: 'https://test.invalid', asWebviewUri: file => 'https://test.invalid/' + file.replaceAll('\\', '/')});
   assert.match(html, /WhaleAnimation.AnimationPlayer/);

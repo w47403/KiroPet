@@ -10,6 +10,25 @@ test('missing AgentStop never becomes a fabricated completion',()=>{
  assert.match(out.label,/尚未确认/);
  assert.equal(eventProgress({...state,state:'done'},182000).active,false);
 });
+test('disable owned hooks preserves exact recoverable backup and leaves custom hooks alone', t => {
+ const fs=require('fs'), path=require('path'), os=require('os');
+ const {disableOwnedHook}=require('../src/event-health');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'whale-hook-'));
+ t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const file=path.join(dir,'.kiro','hooks','whale-pet.json');
+ fs.mkdirSync(path.dirname(file),{recursive:true});
+ const owned=JSON.stringify({version:'v1',hooks:[{name:'Whale Pet - 完成',trigger:'AgentStop',action:{type:'command',command:'HookSignal.ps1 -State done'}}]});
+ fs.writeFileSync(file,owned);
+ const backup=disableOwnedHook(file);
+ assert.equal(fs.existsSync(file),false);
+ assert.equal(fs.readFileSync(backup,'utf8'),owned);
+ assert.notEqual(path.dirname(backup),path.dirname(file));
+ assert.equal(disableOwnedHook(file),null);
+ const custom='{"version":"v1","hooks":[{"name":"custom"}]}';
+ fs.writeFileSync(file,custom);
+ assert.equal(disableOwnedHook(file),null);
+ assert.equal(fs.readFileSync(file,'utf8'),custom);
+});
 test('inspect hook config without touching unrelated project hooks',()=>{
  const owned={version:'v1',hooks:[{name:'Whale Pet - 回答完成',trigger:'AgentStop',action:{type:'command',command:'powershell.exe -File HookSignal.ps1 -State done -Phase finish'}}]};
  assert.equal(isManagedHook(owned),true);

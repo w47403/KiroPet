@@ -77,18 +77,9 @@ $script:taskActive = $false
 $script:taskStart = [DateTime]::UtcNow
 $script:workAccentStart = $null
 $script:workNext = [DateTime]::MaxValue
-function Switch-Art([string]$name, [bool]$Restart = $false) {
-  if ($name -eq 'happy') { $name = 'working' }
-  if ($null -eq $script:manifest.clips.PSObject.Properties[$name]) { $name = 'idle' }
-  if ($name -in @('working','tool','editing') -and -not $script:taskActive) {
-    $script:taskActive=$true; $script:taskStart=Get-AnimationTime; $script:workAccentStart=$null
-    $length=($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
-    $script:workNext=$script:taskStart.AddMilliseconds($length+18000)
-  } elseif ($name -in @('idle','sleep','done')) {
-    $script:taskActive=$false; $script:workAccentStart=$null
-  }
-  if ($script:clipName -eq $name -and -not $Restart) { return }
-  if (-not $script:frameCache.ContainsKey($name)) {
+function Initialize-FrameCache {
+  # Decode before showing the window, never on the animation/UI timer.
+  foreach ($name in $script:manifest.clips.PSObject.Properties.Name) {
     $frames = @()
     foreach ($relative in $script:manifest.clips.$name.frames) {
       $frame = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -100,11 +91,26 @@ function Switch-Art([string]$name, [bool]$Restart = $false) {
     }
     $script:frameCache[$name] = $frames
   }
+}
+Initialize-FrameCache
+function Switch-Art([string]$name, [bool]$Restart = $false) {
+  if ($name -eq 'happy') { $name = 'working' }
+  if ($null -eq $script:manifest.clips.PSObject.Properties[$name]) { $name = 'idle' }
+  if ($name -in @('working','tool','editing') -and -not $script:taskActive) {
+    $script:taskActive=$true; $script:taskStart=Get-AnimationTime; $script:workAccentStart=$null
+    $length=($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
+    $script:workNext=$script:taskStart.AddMilliseconds($length+18000)
+  } elseif ($name -in @('idle','sleep','done')) {
+    $script:taskActive=$false; $script:workAccentStart=$null
+  }
+  if ($script:clipName -eq $name -and -not $Restart) { return }
   if ($name -eq 'done' -and ($Restart -or $script:clipName -ne 'drag')) { $script:doneStarted=Get-AnimationTime }
   $script:clipName = $name
   $script:clipStart = Get-AnimationTime
   $script:lastFrameIndex = -1
-  $script:picture.Source = $script:frameCache[$name][0]
+  # Only Update-Animation commits a sampled frame. Event handlers can request a
+  # different clip during an intro/accent; painting frame zero here flashes it
+  # until the next tick restores the actual task timeline.
 }
 Switch-Art 'idle'
 [void]$script:root.Children.Add($script:picture)
@@ -125,6 +131,8 @@ $script:bubbleText.FontFamily = [System.Windows.Media.FontFamily]::new('Microsof
 $script:bubbleText.FontSize = 12
 $script:bubbleText.TextAlignment = [System.Windows.TextAlignment]::Center
 $script:bubbleText.TextWrapping = [System.Windows.TextWrapping]::Wrap
+$script:bubbleText.MaxHeight = 64
+$script:bubbleText.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
 $script:bubbleText.MaxWidth = $script:whaleSize + 18
 $script:bubble.Child = $script:bubbleText
 [void]$script:root.Children.Add($script:bubble)
@@ -398,7 +406,7 @@ $script:picture.Add_LostMouseCapture({ Finish-PetPress $true })
 # Polls the text token written by the extension or optional Kiro Agent Hooks.
 $script:monitor = New-Object System.Windows.Threading.DispatcherTimer
 $script:monitor.Interval = [TimeSpan]::FromMilliseconds(700)
-$script:monitor.Add_Tick({
+function Update-Activity {
   try {
     if ($ParentProcessId -gt 0) {
       $parent = Get-Process -Id $ParentProcessId -ErrorAction SilentlyContinue
@@ -409,7 +417,7 @@ $script:monitor.Add_Tick({
       if ($raw.StartsWith('{')) {
         $event = $raw | ConvertFrom-Json
         $next = [string]$event.state
-        $eventKey = "$($event.at)|$($event.state)|$($event.project)|$($event.detail)"
+        $eventKey = "$($event.at)|$($event.state)|$($event.project)|$($event.detail)|$($event.reply)|$($event.replyUntil)"
         $project = [string]$event.project
         $script:activityDetail = [string]$event.detail
         $script:eventCount = [int]$event.eventCount
@@ -449,18 +457,24 @@ $script:monitor.Add_Tick({
           'hello' { Say '我在这里～' 2 }
         }
         if ($script:activityDetail) { Say $script:activityDetail 3 }
+        if ($raw.StartsWith('{') -and $event.reply -and $event.replyUntil) {
+          $remaining = ([double]$event.replyUntil - [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) / 1000
+          if ($remaining -gt 0) { Say ('回答 · ' + [string]$event.reply) ([int][Math]::Ceiling([Math]::Min(8,$remaining))) }
+        }
         $script:dockTab.ToolTip = $script:activityDetail
       }
     }
   } catch { }
-})
+}
+$script:monitor.Add_Tick({ Update-Activity })
 
 $script:animate = New-Object System.Windows.Threading.DispatcherTimer
-$script:animate.Interval = [TimeSpan]::FromMilliseconds(80)
+$script:animate.Interval = [TimeSpan]::FromMilliseconds(16)
 function Update-Animation {
   if ([DateTime]::UtcNow -ge $script:hideAt) { Fold-Dock }
   if ($script:folded) {
     Update-Peek
+    $script:animate.Interval = [TimeSpan]::FromMilliseconds(80)
     if (([DateTime]::UtcNow-$script:foldedAt).TotalMilliseconds -ge 340) { $script:picture.Visibility = [System.Windows.Visibility]::Hidden }
     return
   }
@@ -514,10 +528,17 @@ function Update-Animation {
   if (($clip.loop -or ($working -and $script:mood -eq 'tool' -and $script:clipName -eq 'work_pause')) -and -not $quiet) { $elapsed = $elapsed % $total }
   if ($quiet -and -not $script:idleStarted) { $elapsed = 0 }
   $index = $clip.frames.Count - 1
+  $nextFrameMs = 250
   for ($i = 0; $i -lt $clip.durations.Count; $i++) {
-    if ($elapsed -lt $clip.durations[$i]) { $index = $i; break }
+    if ($elapsed -lt $clip.durations[$i]) {
+      $index = $i
+      $nextFrameMs = $clip.durations[$i] - $elapsed
+      break
+    }
     $elapsed -= $clip.durations[$i]
   }
+  # Sleep until the next frame boundary; a held pose needs no 60Hz polling.
+  $script:animate.Interval = [TimeSpan]::FromMilliseconds([Math]::Max(16, [Math]::Min(250, $nextFrameMs)))
   if ($index -ne $script:lastFrameIndex) {
     $script:picture.Source = $script:frameCache[$script:clipName][$index]
     $script:lastFrameIndex = $index
@@ -525,7 +546,7 @@ function Update-Animation {
   if ([DateTime]::UtcNow -gt $script:bubbleUntil) {
     if ($script:mood -in @('working','tool','editing') -and -not $script:mute) {
       $stale=([DateTime]::UtcNow-$script:lastActivityAt).TotalSeconds -gt 180
-      $script:bubbleText.Text = $(if ($stale) { '暂无新 Hook 事件 · 完成状态未确认' } elseif ($script:activityDetail) { $script:activityDetail } else { @{working='正在处理你的请求';tool='正在调用工具';editing='正在更新文件'}[$script:mood] })
+      $script:bubbleText.Text = $(if ($stale) { '暂无新 Kiro 事件 · 完成状态未确认' } elseif ($script:activityDetail) { $script:activityDetail } else { @{working='正在处理你的请求';tool='正在调用工具';editing='正在更新文件'}[$script:mood] })
       $script:bubble.Visibility = [System.Windows.Visibility]::Visible
     } else { $script:bubble.Visibility = [System.Windows.Visibility]::Collapsed }
   }
