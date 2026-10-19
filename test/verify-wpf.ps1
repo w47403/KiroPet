@@ -12,8 +12,8 @@ $destination = Join-Path (Split-Path -Parent (Split-Path -Parent $AssetPath)) 'o
 if ($script:frameCache.Count -ne $script:manifest.clips.PSObject.Properties.Name.Count) { throw 'All clips must be decoded before playback' }
 foreach ($name in $script:manifest.clips.PSObject.Properties.Name) {
   Switch-Art $name $true
-  if ($script:frameCache[$name].Count -ne 8) { throw "Expected 8 WPF frames: $name" }
-  foreach ($index in @(0,7)) {
+  if ($script:frameCache[$name].Count -ne $script:manifest.clips.$name.frames.Count) { throw "Frame count mismatch: $name" }
+  foreach ($index in @(0,($script:frameCache[$name].Count-1))) {
     $script:picture.Source = $script:frameCache[$name][$index]
     if (-not $script:picture.Source.IsFrozen) { throw 'Decoded bitmap must be frozen' }
     $script:root.Measure([System.Windows.Size]::new($script:window.Width, $script:window.Height))
@@ -134,6 +134,30 @@ $script:bubbleUntil=[DateTime]::UtcNow.AddSeconds(-1)
 Update-Animation
 if ($script:bubble.Visibility -ne 'Collapsed') { throw 'Completed answer bubble did not close' }
 Write-Output 'WPF answer excerpt survives completion and expires without reviving the bubble.'
+$script:mood='working'; $script:reactionUntil=$null; Switch-Art 'working' $true
+$script:taskStart=(Get-AnimationTime).AddMilliseconds(-4000)
+$script:loopStart=$script:taskStart
+$script:workNext=(Get-AnimationTime).AddSeconds(30)
+Update-Animation
+Invoke-PetReaction
+if ($script:clipName -ne 'work_pet') { throw 'Work reaction removed the desk' }
+$script:reactionUntil=[DateTime]::UtcNow.AddMilliseconds(-1)
+Update-Animation
+if ($script:clipName -ne 'working') { throw 'Work reaction did not resume work' }
+$script:mood='idle'; Switch-Art 'idle' $true
+Begin-PetDrag; End-PetDrag; Update-Animation
+if ($script:clipName -ne 'land') { throw 'Missing idle landing recovery' }
+$script:reactionUntil=$null
+foreach ($size in @(100,140,190,260,320)) {
+  Apply-Size $size
+  $script:root.Measure([System.Windows.Size]::new($script:window.Width,$script:window.Height))
+  $script:root.Arrange([System.Windows.Rect]::new(0,0,$script:window.Width,$script:window.Height))
+  $script:root.UpdateLayout()
+  if ($script:picture.Width -ne $size -or $script:picture.Height -ne $size -or $script:picture.ActualWidth -le 0 -or $script:picture.ActualWidth -gt $size -or $script:picture.ActualHeight -gt $size) { throw "Wrong pet layout at ${size}: $($script:picture.ActualWidth) x $($script:picture.ActualHeight)" }
+}
+$unique=@($script:manifest.clips.PSObject.Properties | ForEach-Object { $_.Value.frames } | Sort-Object -Unique)
+if ($script:bitmapCache.Count -ne $unique.Count) { throw 'Duplicate decoded frame allocations' }
+Write-Output "WPF contextual reactions, landing, five sizes and $($unique.Count) shared decoded images passed."
 $script:animate.Stop()
 $script:monitor.Stop()
 $script:window.Close()

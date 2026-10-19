@@ -154,6 +154,8 @@ def prepare():
     icon.alpha_composite(Image.open(DEST / 'idle' / '00.png').resize((192, 256), Image.Resampling.LANCZOS), (32, 0))
     icon.save(ROOT / 'assets' / 'icon.png', optimize=True)
     print(f'Prepared {len(STATES)} clips, {len(STATES)*8} RGBA frames and matching native Tk frames.')
+    from optimize_animation_assets import optimize
+    optimize()
 
 
 if __name__ == '__main__':

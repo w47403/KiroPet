@@ -11,9 +11,11 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 from stabilize_work_frames import stabilize_frames
 from lock_work_desk import lock_desks
+from optimize_animation_assets import optimize
 
 stabilize_frames()
 lock_desks()
+optimize()
 p = json.loads((ROOT / 'package.json').read_text(encoding='utf8'))
 out = ROOT.parent / f"{p['name']}-{p['version']}.vsix"
 manifest = f'''<?xml version="1.0" encoding="utf-8"?>

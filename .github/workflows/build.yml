@@ -22,6 +22,8 @@ jobs:
       - name: Lock stationary desk artwork on Windows
         run: python scripts/lock_work_desk.py
       - name: Decode and render native Windows animation frames
+        run: python scripts/optimize_animation_assets.py
+      - name: Verify native Windows player
         shell: powershell
         run: powershell.exe -NoProfile -STA -File test/verify-wpf.ps1
   build:
@@ -46,6 +48,7 @@ jobs:
         run: python scripts/lock_work_desk.py
       - name: Syntax checks
         run: |
+          python scripts/optimize_animation_assets.py
           node --check src/extension.js
           node --check src/event-health.js
           node --check src/animation-player.js

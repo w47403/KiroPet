@@ -16,6 +16,9 @@ dist/
 build/
 output/
 assets/animations/source/*.png
+!assets/animations/source/sit_down.png
+!assets/animations/source/lie_down.png
+!assets/animations/source/work_bridge.png
 
 # Local credentials and hook activity files
 .env

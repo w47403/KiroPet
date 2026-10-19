@@ -1,0 +1,415 @@
+{
+  "version": 2,
+  "frameSize": [
+    256,
+    342
+  ],
+  "idleBehavior": {
+    "clips": [
+      "idle",
+      "sit",
+      "nap",
+      "stretch",
+      "walk",
+      "rice_scoop",
+      "rice_hug",
+      "rice_full"
+    ],
+    "initialHoldMs": 22000,
+    "restMinMs": 18000,
+    "restMaxMs": 45000
+  },
+  "clips": {
+    "idle": {
+      "frames": [
+        "idle/00.png",
+        "idle/01.png",
+        "idle/02.png",
+        "idle/03.png",
+        "idle/04.png",
+        "idle/05.png",
+        "idle/06.png",
+        "idle/07.png"
+      ],
+      "durations": [
+        640,
+        160,
+        160,
+        160,
+        160,
+        320,
+        160,
+        240
+      ],
+      "loop": false
+    },
+    "working": {
+      "frames": [
+        "working/00.png",
+        "working/01.png",
+        "working/02.png",
+        "working/03.png",
+        "working/04.png",
+        "working/05.png",
+        "working/06.png",
+        "working/07.png"
+      ],
+      "durations": [
+        480,
+        320,
+        320,
+        480,
+        240,
+        480,
+        320,
+        480
+      ],
+      "loop": true
+    },
+    "tool": {
+      "frames": [
+        "tool/00.png",
+        "tool/01.png",
+        "tool/02.png",
+        "tool/03.png",
+        "tool/04.png",
+        "tool/05.png",
+        "tool/06.png",
+        "tool/07.png"
+      ],
+      "durations": [
+        800,
+        700,
+        900,
+        1200,
+        900,
+        1200,
+        700,
+        800
+      ],
+      "loop": true
+    },
+    "editing": {
+      "frames": [
+        "editing/00.png",
+        "editing/01.png",
+        "editing/02.png",
+        "editing/03.png",
+        "editing/04.png",
+        "editing/05.png",
+        "editing/06.png",
+        "editing/07.png"
+      ],
+      "durations": [
+        320,
+        240,
+        240,
+        320,
+        240,
+        320,
+        240,
+        320
+      ],
+      "loop": true
+    },
+    "done": {
+      "frames": [
+        "done/00.png",
+        "done/01.png",
+        "done/02.png",
+        "done/03.png",
+        "done/04.png",
+        "done/05.png",
+        "done/06.png",
+        "done/07.png"
+      ],
+      "durations": [
+        800,
+        600,
+        600,
+        700,
+        600,
+        600,
+        700,
+        1600
+      ],
+      "loop": false
+    },
+    "hug": {
+      "frames": [
+        "hug/00.png",
+        "hug/01.png",
+        "hug/02.png",
+        "hug/03.png",
+        "hug/04.png",
+        "hug/05.png",
+        "hug/06.png",
+        "hug/07.png"
+      ],
+      "durations": [
+        240,
+        240,
+        240,
+        240,
+        240,
+        240,
+        240,
+        320
+      ],
+      "loop": false
+    },
+    "sleep": {
+      "frames": [
+        "sleep/00.png",
+        "sleep/01.png",
+        "sleep/02.png",
+        "sleep/03.png",
+        "sleep/04.png",
+        "sleep/05.png",
+        "sleep/06.png",
+        "sleep/07.png"
+      ],
+      "durations": [
+        1200,
+        1200,
+        16000,
+        1200,
+        1200,
+        14000,
+        1200,
+        1200
+      ],
+      "loop": true
+    },
+    "sit": {
+      "frames": [
+        "sit/00.png",
+        "sit/01.png",
+        "sit/02.png",
+        "sit/03.png",
+        "sit/04.png",
+        "sit/05.png",
+        "sit/06.png",
+        "sit/07.png"
+      ],
+      "durations": [
+        1200,
+        200,
+        320,
+        400,
+        240,
+        400,
+        320,
+        1000
+      ],
+      "loop": false
+    },
+    "nap": {
+      "frames": [
+        "nap/00.png",
+        "nap/01.png",
+        "nap/02.png",
+        "nap/03.png",
+        "nap/04.png",
+        "nap/05.png",
+        "nap/06.png",
+        "nap/07.png"
+      ],
+      "durations": [
+        800,
+        500,
+        1200,
+        500,
+        500,
+        1200,
+        500,
+        800
+      ],
+      "loop": false
+    },
+    "stretch": {
+      "frames": [
+        "stretch/00.png",
+        "stretch/01.png",
+        "stretch/02.png",
+        "stretch/03.png",
+        "stretch/04.png",
+        "stretch/05.png",
+        "stretch/06.png",
+        "stretch/07.png"
+      ],
+      "durations": [
+        500,
+        320,
+        500,
+        500,
+        500,
+        500,
+        320,
+        800
+      ],
+      "loop": false
+    },
+    "walk": {
+      "frames": [
+        "walk/00.png",
+        "walk/01.png",
+        "walk/02.png",
+        "walk/03.png",
+        "walk/04.png",
+        "walk/05.png",
+        "walk/06.png",
+        "walk/07.png"
+      ],
+      "durations": [
+        500,
+        400,
+        400,
+        400,
+        400,
+        400,
+        400,
+        700
+      ],
+      "loop": false
+    },
+    "work_start": {
+      "frames": [
+        "work_start/00.png",
+        "work_start/01.png",
+        "work_start/02.png",
+        "work_start/03.png",
+        "work_start/04.png",
+        "work_start/05.png",
+        "work_start/06.png",
+        "work_start/07.png"
+      ],
+      "durations": [
+        500,
+        600,
+        750,
+        600,
+        750,
+        600,
+        600,
+        1000
+      ],
+      "loop": false
+    },
+    "work_pause": {
+      "frames": [
+        "work_pause/00.png",
+        "work_pause/01.png",
+        "work_pause/02.png",
+        "work_pause/03.png",
+        "work_pause/04.png",
+        "work_pause/05.png",
+        "work_pause/06.png",
+        "work_pause/07.png"
+      ],
+      "durations": [
+        800,
+        700,
+        900,
+        1200,
+        900,
+        1200,
+        700,
+        800
+      ],
+      "loop": false
+    },
+    "rice_scoop": {
+      "frames": [
+        "rice_scoop/00.png",
+        "rice_scoop/01.png",
+        "rice_scoop/02.png",
+        "rice_scoop/03.png",
+        "rice_scoop/04.png",
+        "rice_scoop/05.png",
+        "rice_scoop/06.png",
+        "rice_scoop/07.png"
+      ],
+      "durations": [
+        800,
+        600,
+        600,
+        480,
+        600,
+        600,
+        1000,
+        1200
+      ],
+      "loop": false
+    },
+    "rice_hug": {
+      "frames": [
+        "rice_hug/00.png",
+        "rice_hug/01.png",
+        "rice_hug/02.png",
+        "rice_hug/03.png",
+        "rice_hug/04.png",
+        "rice_hug/05.png",
+        "rice_hug/06.png",
+        "rice_hug/07.png"
+      ],
+      "durations": [
+        800,
+        600,
+        600,
+        800,
+        1000,
+        1000,
+        700,
+        1200
+      ],
+      "loop": false
+    },
+    "rice_full": {
+      "frames": [
+        "rice_full/00.png",
+        "rice_full/01.png",
+        "rice_full/02.png",
+        "rice_full/03.png",
+        "rice_full/04.png",
+        "rice_full/05.png",
+        "rice_full/06.png",
+        "rice_full/07.png"
+      ],
+      "durations": [
+        800,
+        600,
+        600,
+        700,
+        800,
+        1200,
+        700,
+        1400
+      ],
+      "loop": false
+    },
+    "drag": {
+      "frames": [
+        "drag/00.png",
+        "drag/01.png",
+        "drag/02.png",
+        "drag/03.png",
+        "drag/04.png",
+        "drag/05.png",
+        "drag/06.png",
+        "drag/07.png"
+      ],
+      "durations": [
+        160,
+        160,
+        160,
+        160,
+        160,
+        160,
+        160,
+        160
+      ],
+      "loop": true
+    }
+  }
+}

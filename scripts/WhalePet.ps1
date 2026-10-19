@@ -70,6 +70,7 @@ $script:picture.Source = $bmp
 $script:animationFolder = Join-Path (Split-Path -Parent $AssetPath) 'animations'
 $script:manifest = Get-Content -LiteralPath (Join-Path $script:animationFolder 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $script:frameCache = @{}
+$script:bitmapCache = @{}
 $script:clipName = ''
 $script:clipStart = [DateTime]::UtcNow
 $script:lastFrameIndex = -1
@@ -77,17 +78,21 @@ $script:taskActive = $false
 $script:taskStart = [DateTime]::UtcNow
 $script:workAccentStart = $null
 $script:workNext = [DateTime]::MaxValue
+$script:workState = ''
+$script:loopStart = [DateTime]::UtcNow
 function Initialize-FrameCache {
   # Decode before showing the window, never on the animation/UI timer.
   foreach ($name in $script:manifest.clips.PSObject.Properties.Name) {
     $frames = @()
     foreach ($relative in $script:manifest.clips.$name.frames) {
+      if ($script:bitmapCache.ContainsKey($relative)) { $frames += $script:bitmapCache[$relative]; continue }
       $frame = New-Object System.Windows.Media.Imaging.BitmapImage
       $frame.BeginInit()
       $frame.UriSource = [System.Uri]::new((Join-Path $script:animationFolder $relative), [System.UriKind]::Absolute)
       $frame.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
       $frame.EndInit(); $frame.Freeze()
       $frames += $frame
+      $script:bitmapCache[$relative] = $frame
     }
     $script:frameCache[$name] = $frames
   }
@@ -96,6 +101,9 @@ Initialize-FrameCache
 function Switch-Art([string]$name, [bool]$Restart = $false) {
   if ($name -eq 'happy') { $name = 'working' }
   if ($null -eq $script:manifest.clips.PSObject.Properties[$name]) { $name = 'idle' }
+  if ($name -in @('working','tool','editing') -and ($name -ne $script:workState -or $Restart)) {
+    $script:workState=$name; $script:loopStart=Get-AnimationTime
+  }
   if ($name -in @('working','tool','editing') -and -not $script:taskActive) {
     $script:taskActive=$true; $script:taskStart=Get-AnimationTime; $script:workAccentStart=$null
     $length=($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
@@ -318,7 +326,35 @@ function Add-MenuItem([System.Windows.Controls.ContextMenu]$menu, [string]$label
 }
 
 $menu = New-Object System.Windows.Controls.ContextMenu
-Add-MenuItem $menu '🐋 摸摸鲸鱼娘' { Switch-Art 'hug'; $script:reactionUntil = [DateTime]::UtcNow.AddSeconds(2); Say $script:phrases[(Get-Random -Maximum $script:phrases.Count)] }
+function Restore-Reaction([double]$shift) {
+  $script:reactionUntil = $null
+  $script:taskStart = $script:taskStart.AddMilliseconds($shift)
+  $script:loopStart = $script:loopStart.AddMilliseconds($shift)
+  if ($script:doneStarted) { $script:doneStarted = $script:doneStarted.AddMilliseconds($shift) }
+  if ($script:idleStarted) { $script:idleStarted = $script:idleStarted.AddMilliseconds($shift) }
+  if ($script:workAccentStart) { $script:workAccentStart = $script:workAccentStart.AddMilliseconds($shift) }
+  if ($script:workNext -ne [DateTime]::MaxValue) { $script:workNext = $script:workNext.AddMilliseconds($shift) }
+  $script:idleNext = $script:idleNext.AddMilliseconds($shift)
+  Switch-Art $script:reactionSavedClip
+  $script:clipStart = $script:reactionSavedStart.AddMilliseconds($shift)
+}
+function Invoke-PetReaction {
+  if ($script:reactionUntil -or $script:dragging) { return }
+  $pose = $script:clipName
+  if ($script:lastFrameIndex -ge 0) { $pose = ($script:manifest.clips.($script:clipName).frames[$script:lastFrameIndex] -split '/')[0] }
+  if ($pose -in @('work_start','done','sit_down','lie_down','rice_scoop','rice_hug','rice_full')) { Say '摸摸头，继续加油！'; return }
+  $name = $script:manifest.reactions.($script:mood)
+  if (-not $name) { $name = $script:manifest.reactions.$pose }
+  if (-not $name) { $name = 'hug' }
+  $script:reactionLength = ($script:manifest.clips.$name.durations | Measure-Object -Sum).Sum
+  $script:reactionSavedClip = $script:clipName
+  $script:reactionSavedStart = $script:clipStart
+  Switch-Art $name $true
+  $script:reactionUntil = [DateTime]::UtcNow.AddMilliseconds($script:reactionLength)
+  Say $script:phrases[(Get-Random -Maximum $script:phrases.Count)]
+  Update-Animation
+}
+Add-MenuItem $menu '🐋 摸摸鲸鱼娘' { Invoke-PetReaction }
 Add-MenuItem $menu '💻 工作中' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'working'; Switch-Art 'happy'; Say '正在认真写代码！' }
 Add-MenuItem $menu '🛠 调用工具' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'tool'; Switch-Art 'tool'; Say '工具准备好啦～' }
 Add-MenuItem $menu '📝 修改文件' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'editing'; Switch-Art 'editing'; Say '正在更新文件～' }
@@ -366,10 +402,14 @@ $script:picture.Add_MouseLeftButtonDown({
 
 function Begin-PetDrag {
   if ($script:dragging) { return }
+  if ($script:reactionUntil) {
+    Restore-Reaction ([Math]::Max(0,[Math]::Min($script:reactionLength,$script:reactionLength-($script:reactionUntil-[DateTime]::UtcNow).TotalMilliseconds)))
+  }
   $script:dragging=$true; $script:dragStarted=[DateTime]::UtcNow
   $script:reactionUntil=$null
   $script:picture.Cursor=[System.Windows.Input.Cursors]::SizeAll
   Switch-Art 'drag' $true
+  if ($script:animate) { $script:animate.Interval=[TimeSpan]::FromMilliseconds(16) }
 }
 function End-PetDrag {
   if (-not $script:dragging) { return }
@@ -377,6 +417,14 @@ function End-PetDrag {
   $script:dragStarted=$null; $script:dragging=$false
   $script:picture.Cursor=[System.Windows.Input.Cursors]::Hand
   Switch-Art $script:mood
+  if ($script:mood -eq 'idle' -and $script:manifest.clips.land) {
+    $script:idleName='idle'; $script:idleStarted=$null
+    $script:idleNext=(Get-AnimationTime).AddMilliseconds($script:manifest.idleBehavior.initialHoldMs)
+    $script:reactionSavedClip='idle'; $script:reactionSavedStart=Get-AnimationTime
+    $script:reactionLength=($script:manifest.clips.land.durations | Measure-Object -Sum).Sum
+    Switch-Art 'land' $true
+    $script:reactionUntil=[DateTime]::UtcNow.AddMilliseconds($script:reactionLength)
+  }
 }
 function Finish-PetPress([bool]$Canceled = $false) {
   if ($null -eq $script:pressPoint) { return }
@@ -386,8 +434,7 @@ function Finish-PetPress([bool]$Canceled = $false) {
   $script:picture.ReleaseMouseCapture()
   if ($moved) { Snap-Dock
   } elseif (-not $Canceled) {
-    Switch-Art 'hug'; $script:reactionUntil = [DateTime]::UtcNow.AddSeconds(2)
-    Say $script:phrases[(Get-Random -Maximum $script:phrases.Count)]
+    Invoke-PetReaction
   }
 }
 $script:picture.Add_MouseMove({
@@ -462,6 +509,7 @@ function Update-Activity {
           if ($remaining -gt 0) { Say ('回答 · ' + [string]$event.reply) ([int][Math]::Ceiling([Math]::Min(8,$remaining))) }
         }
         $script:dockTab.ToolTip = $script:activityDetail
+        Update-Animation
       }
     }
   } catch { }
@@ -480,8 +528,7 @@ function Update-Animation {
   }
   if (-not $script:window.IsVisible -or $script:window.WindowState -eq [System.Windows.WindowState]::Minimized) { return }
   if ($script:reactionUntil -and [DateTime]::UtcNow -gt $script:reactionUntil) {
-    $script:reactionUntil = $null
-    Switch-Art $script:mood
+    Restore-Reaction $script:reactionLength
   }
   $now=Get-AnimationTime
   if ($script:dragging) { Switch-Art 'drag' }
@@ -499,18 +546,24 @@ function Update-Animation {
         $script:workAccentStart=$now
         $script:workNext=$now.AddMilliseconds($accentLength+(Get-Random -Minimum 18000 -Maximum 35001))
       }
-      if (($script:mood -eq 'tool' -or $script:workAccentStart) -and $accentLength -gt 0) { Switch-Art 'work_pause'
+      if ($script:mood -eq 'tool') { Switch-Art 'tool'
+      } elseif ($script:workAccentStart -and $accentLength -gt 0) { Switch-Art 'work_pause'
       } else { Switch-Art $script:mood }
     }
   }
   if ($quiet) {
     if ($now -ge $script:idleNext) {
       $names = @($script:manifest.idleBehavior.clips | Where-Object { $_ -ne $script:idleName })
-      $script:idleName = $names[(Get-Random -Maximum $names.Count)]
+      $weighted = @($names | ForEach-Object {
+        $weight = $script:manifest.idleBehavior.weights.$_
+        if (-not $weight) { $weight = 1 }
+        for ($w=0; $w -lt $weight; $w++) { $_ }
+      })
+      $script:idleName = $weighted[(Get-Random -Maximum $weighted.Count)]
       Switch-Art $script:idleName $true
       $script:idleStarted = $now
       $length = ($script:manifest.clips.($script:idleName).durations | Measure-Object -Sum).Sum
-      $script:idleNext = $now.AddMilliseconds($length + (Get-Random -Minimum 18000 -Maximum 45001))
+      $script:idleNext = $now.AddMilliseconds($length + (Get-Random -Minimum ([int]$script:manifest.idleBehavior.restMinMs) -Maximum ([int]$script:manifest.idleBehavior.restMaxMs+1)))
     } elseif ($script:clipName -ne $script:idleName) { Switch-Art $script:idleName }
   }
   $clip = $script:manifest.clips.($script:clipName)
@@ -522,7 +575,7 @@ function Update-Animation {
   if ($working) {
     $elapsed = if ($script:clipName -eq 'work_start') { $workElapsed
     } elseif ($script:workAccentStart -and $script:mood -ne 'tool') { ($now-$script:workAccentStart).TotalMilliseconds
-    } else { $workElapsed-$introLength }
+    } else { ($now - $(if ($script:loopStart -gt $script:taskStart.AddMilliseconds($introLength)) { $script:loopStart } else { $script:taskStart.AddMilliseconds($introLength) })).TotalMilliseconds }
   }
   if ($quiet -and $script:idleStarted) { $elapsed = ($now-$script:idleStarted).TotalMilliseconds }
   if (($clip.loop -or ($working -and $script:mood -eq 'tool' -and $script:clipName -eq 'work_pause')) -and -not $quiet) { $elapsed = $elapsed % $total }

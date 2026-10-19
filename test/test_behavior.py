@@ -8,12 +8,22 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
-from animation_runtime import IdleDirector, WorkDirector, DragDirector
+from animation_runtime import IdleDirector, WorkDirector, DragDirector, frame_delay
 from dock_runtime import snap, hidden_position, ease_out, TAB_EXPOSURE
 from status_signal import activity, merge_activity
 
 
 class BehaviorTest(unittest.TestCase):
+    def test_adaptive_frame_deadlines(self):
+        clip = {'durations': [160, 320], 'loop': True}
+        for elapsed, expected in [(80,80), (160,250), (470,16), (480,160)]:
+            self.assertEqual(frame_delay(clip, elapsed), expected)
+        self.assertEqual(frame_delay(dict(clip, loop=False), 1000), 250)
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        idle=IdleDirector(manifest,0)
+        idle.sample(21950)
+        self.assertEqual(idle.next_delay,50)
+
     def test_drag_continues_loop_and_freezes_underlying_work_clock(self):
         manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
         drag=DragDirector(manifest)
@@ -58,7 +68,7 @@ class BehaviorTest(unittest.TestCase):
         for now in (0,1000,21999): self.assertEqual(director.sample(now),('idle',0))
         first = director.sample(22000)[0]
         self.assertNotEqual(first,'idle')
-        self.assertEqual(director.sample(30000),(first,7))
+        self.assertEqual(director.sample(22000+sum(manifest['clips'][first]['durations'])),(first,len(manifest['clips'][first]['frames'])-1))
         second = director.sample(director.next_at)[0]
         self.assertNotEqual(first,second)
         director.reset(100000)

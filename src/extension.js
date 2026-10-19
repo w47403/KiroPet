@@ -344,16 +344,19 @@ const vscode=acquireVsCodeApi();const stage=document.getElementById('stage'),bub
 const phrases=['在呢～','呼噜呼噜～','摸摸头～','你写代码，我负责卖萌！'];let until=0;
 const manifest=${JSON.stringify(manifest)};const pet=document.getElementById('pet');
 const player=new WhaleAnimation.AnimationPlayer(manifest);const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-const loaded=new Set();let frameTimer=null;let lastFrame='';
-function preload(name){const clip=manifest.clips[name];if(!clip)return;for(const src of clip.frames){if(loaded.has(src))continue;loaded.add(src);const img=new Image();img.src=src;}}
-function animate(){if(document.hidden)return;const frame=player.sample(reduced.matches);preload(frame.name);if(frame.path!==lastFrame){pet.src=frame.path;lastFrame=frame.path;}frameTimer=setTimeout(animate,80);}
+const loaded=new Map();let frameTimer=null;let lastFrame='';let assetsReady=false;
+function preload(name){const clip=manifest.clips[name];if(!clip)return;for(const src of clip.frames){if(loaded.has(src))continue;const img=new Image();const entry={img,ready:false};loaded.set(src,entry);entry.promise=new Promise(resolve=>{img.onload=async()=>{try{await img.decode();entry.ready=true;}catch{}resolve();};img.onerror=()=>resolve();});img.src=src;}}
+function animate(){clearTimeout(frameTimer);if(document.hidden||!assetsReady)return;const frame=player.sample(reduced.matches);if(frame.path!==lastFrame&&loaded.get(frame.path)?.ready){pet.src=frame.path;lastFrame=frame.path;}frameTimer=setTimeout(animate,player.nextDelay);}
 document.addEventListener('visibilitychange',()=>{clearTimeout(frameTimer);if(document.hidden){player.pause();}else{player.resume();animate();draw();}});
-preload('idle');animate();
+player.pause('loading');if(document.hidden)player.pause();
+for(const name of Object.keys(manifest.clips))preload(name);
+Promise.all([...loaded.values()].map(entry=>entry.promise)).then(()=>{assetsReady=true;player.resume('loading');animate();});
+reduced.addEventListener('change',()=>animate());
 function say(text,ms=2800){bubble.textContent=text;until=Date.now()+ms;bubble.style.display='block'}
 pet.draggable=false;stage.style.touchAction='none';stage.style.userSelect='none';let press=null;
 stage.addEventListener('pointerdown',e=>{if(e.button!==0||press)return;press={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};stage.setPointerCapture(e.pointerId);});
-stage.addEventListener('pointermove',e=>{if(!press||press.id!==e.pointerId)return;if(!press.moved&&Math.abs(e.clientX-press.x)+Math.abs(e.clientY-press.y)>=8){press.moved=true;player.beginDrag();preload('drag');}});
-function releasePet(e,canceled=false){if(!press||press.id!==e.pointerId)return;const moved=press.moved;press=null;player.endDrag();if(stage.hasPointerCapture(e.pointerId))stage.releasePointerCapture(e.pointerId);if(!moved&&!canceled){say(phrases[Math.floor(Math.random()*phrases.length)]);player.react('hug');preload('hug');}}
+stage.addEventListener('pointermove',e=>{if(!press||press.id!==e.pointerId)return;if(!press.moved&&Math.abs(e.clientX-press.x)+Math.abs(e.clientY-press.y)>=8){press.moved=true;player.beginDrag();animate();}});
+function releasePet(e,canceled=false){if(!press||press.id!==e.pointerId)return;const moved=press.moved;press=null;player.endDrag();if(stage.hasPointerCapture(e.pointerId))stage.releasePointerCapture(e.pointerId);if(!moved&&!canceled){say(phrases[Math.floor(Math.random()*phrases.length)]);player.react('hug');}animate();}
 stage.addEventListener('pointerup',e=>releasePet(e));stage.addEventListener('pointercancel',e=>releasePet(e,true));stage.addEventListener('lostpointercapture',e=>releasePet(e,true));
 document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',()=>vscode.postMessage({type:el.dataset.action})));
 document.querySelectorAll('[data-state]').forEach(el=>el.addEventListener('click',()=>vscode.postMessage({type:'setState',state:el.dataset.state})));
@@ -376,7 +379,7 @@ function draw(){if(document.hidden)return;let label={idle:'💤 待机中',worki
  else if(Date.now()>until)bubble.style.display='none';}
 window.addEventListener('message',evt=>{const data=evt.data;if(!data||data.type!=='activity')return;
  let next=data.activity;const key=JSON.stringify([next.at,next.state,next.reply,next.replyUntil]);const newEvent=key!==seenAt;if(newEvent){seenAt=key;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};const reply=next.reply&&next.replyUntil>Date.now();say(reply?'回答 · '+next.reply:next.detail||map[next.state]||'嗨～',reply?Math.min(8000,next.replyUntil-Date.now()):2800)}
- current=next;player.setState(next.state,newEvent&&(next.state==='done'||next.phase==='start'));preload(player.sample(reduced.matches).name);draw();});
+ current=next;if(newEvent)player.setState(next.state,next.state==='done'||next.phase==='start');animate();draw();});
 setInterval(draw,500);vscode.postMessage({type:'ready'});
 </script></body></html>`;
 }

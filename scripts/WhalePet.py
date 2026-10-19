@@ -2,12 +2,13 @@
 """Optional macOS / Linux desktop window. Uses Python 3 + Tk (no pip dependencies)."""
 import argparse
 import json
+import math
 import os
 import random
 import sys
 import time
 import tkinter as tk
-from animation_runtime import frame_at, IdleDirector, WorkDirector, DragDirector
+from animation_runtime import frame_at, frame_delay, IdleDirector, WorkDirector, DragDirector
 from dock_runtime import TAB_EXPOSURE, snap, hidden_position, ease_out
 
 p = argparse.ArgumentParser()
@@ -20,6 +21,7 @@ a = p.parse_args()
 phrases = ['在呢～', '摸摸头，继续加油！', '今天也要写出漂亮的代码～', '呼噜呼噜～', '你写代码，我负责卖萌！']
 size = max(100, min(320, a.size))
 root = tk.Tk()
+root.withdraw()
 root.title('Kiro 鲸鱼娘桌宠')
 root.attributes('-topmost', True)
 root.resizable(False, False)
@@ -38,22 +40,29 @@ animation_dir = os.path.join(os.path.dirname(a.image), 'animations')
 with open(os.path.join(animation_dir, 'manifest.json'), encoding='utf-8') as file:
     manifest = json.load(file)
 frame_cache = {}
+image_cache = {}
 
 def frames_for(name):
     if name not in frame_cache:
         frames = []
         for relative in manifest['clips'][name]['frames']:
+            if relative in image_cache:
+                frames.append(image_cache[relative])
+                continue
             # Pre-sized PNGs keep native Tk dependency-free and avoid integer zoom artifacts.
             filename = os.path.join(animation_dir, 'tk', str(size), relative)
             if not os.path.isfile(filename):
                 filename = os.path.join(animation_dir, relative)
             raw = tk.PhotoImage(file=filename)
             factor = max(1, round(max(raw.width(), raw.height()) / size))
-            frames.append(raw.subsample(factor, factor))
+            image_cache[relative] = raw.subsample(factor, factor)
+            frames.append(image_cache[relative])
         frame_cache[name] = frames
     return frame_cache[name]
 
 photo = frames_for('idle')[0]
+for clip_name in manifest['clips']:
+    frames_for(clip_name)
 W, H = max(size, photo.width() + 18), photo.height() + 76
 screenw, screenh = root.winfo_screenwidth(), root.winfo_screenheight()
 x, y = screenw-W-32, screenh-H-95
@@ -69,6 +78,7 @@ bubble_end = 0.0
 start_time = time.monotonic()
 clip_start = start_time
 reaction_start = None
+reaction_name = 'hug'
 idle = IdleDirector(manifest, start_time*1000)
 work = WorkDirector(manifest)
 interaction = DragDirector(manifest)
@@ -174,6 +184,29 @@ def say(msg, sec=3):
     canvas.itemconfigure(text_id, text=msg)
     bubble_end = time.monotonic() + sec
 
+def react():
+    global reaction_start, reaction_name
+    if reaction_start is not None: return
+    pose = manifest['clips'][last_frame[0]]['frames'][last_frame[1]].split('/')[0] if last_frame else 'idle'
+    if pose in ('work_start','done','sit_down','lie_down','rice_scoop','rice_hug','rice_full'):
+        say(random.choice(phrases))
+        return
+    reactions = manifest.get('reactions',{})
+    reaction_name = reactions.get(state,reactions.get(pose,'hug'))
+    reaction_start = animation_now()
+    say(random.choice(phrases))
+    animate()
+
+def shift_background(shift):
+    global clip_start
+    clip_start += shift/1000
+    idle.next_at += shift
+    if idle.started is not None: idle.started += shift
+    if work.started is not None: work.started += shift
+    work.loop_started += shift
+    work.next_at += shift
+    if work.accent is not None: work.accent += shift
+
 def close(_=None): root.destroy()
 def click(e):
     global drag, motion_job
@@ -182,19 +215,26 @@ def click(e):
     drag = (e.x_root, e.y_root, root.winfo_x(), root.winfo_y())
     canvas.grab_set()
 def move(e):
+    global reaction_start
     if drag:
         dx, dy = e.x_root-drag[0], e.y_root-drag[1]
         if interaction.started is None and abs(dx)+abs(dy)<8: return
+        if interaction.started is None and reaction_start is not None:
+            shift_background(min(sum(manifest['clips'][reaction_name]['durations']),(animation_now()-reaction_start)*1000))
+            reaction_start=None
         interaction.begin(time.monotonic()*1000)
         position(drag[2]+dx,drag[3]+dy)
+        animate()
 def release(e):
-    global drag, reaction_start, dock_edge, dock_position
+    global drag, reaction_start, reaction_name, dock_edge, dock_position
     moved = interaction.started is not None
     interaction.end(time.monotonic()*1000)
     if drag and not moved:
-        reaction_start = animation_now()
-        say(random.choice(phrases))
+        react()
     elif drag:
+        if state == 'idle':
+            idle.reset(animation_now()*1000)
+            reaction_name='land'; reaction_start=animation_now()
         result = snap(root.winfo_x(),root.winfo_y(),W,H,(0,0,screenw,screenh)) if dock_enabled else None
         dock_edge = result[0] if result else None
         if result:
@@ -202,6 +242,7 @@ def release(e):
             smooth_to(*dock_position); schedule_hide()
     drag = None
     canvas.grab_release()
+    animate()
 
 def cancel_drag(_=None):
     global drag
@@ -209,6 +250,7 @@ def cancel_drag(_=None):
     drag = None
     canvas.grab_release()
     schedule_hide()
+    animate()
 
 def menu(e):
     global popup_open
@@ -222,7 +264,7 @@ def menu_closed(_):
     popup_open = False
     schedule_hide()
 popup.bind('<Unmap>',menu_closed)
-popup.add_command(label='🐋 摸摸鲸鱼娘', command=lambda: say(random.choice(phrases)))
+popup.add_command(label='🐋 摸摸鲸鱼娘', command=react)
 popup.add_command(label='边缘吸附与收起：开启 / 关闭', command=toggle_dock)
 popup.add_command(label='退出桌宠（可在 Kiro 中重开）', command=close)
 canvas.bind('<ButtonPress-1>', click)
@@ -249,6 +291,7 @@ def monitor():
         current = (payload.get('state', 'idle'), payload.get('at'), payload.get('detail'), payload.get('reply'), payload.get('replyUntil'))
         if current != last_state:
             last_state = current
+            reaction_start = None
             next_state = current[0] if current[0] in manifest['clips'] else 'idle'
             restart = payload.get('phase')=='start'
             if next_state != state or next_state == 'done' or restart:
@@ -267,35 +310,51 @@ def monitor():
             remaining = (float(payload.get('replyUntil') or 0) - time.time()*1000) / 1000
             if payload.get('reply') and remaining > 0 and not folded:
                 say('回答 · ' + str(payload['reply'])[:90], min(8, remaining))
+            animate()
     except (OSError, ValueError, TypeError):
         pass
     root.after(700, monitor)
 
+animation_job = None
+
 def animate():
-    global reaction_start, last_frame
+    global reaction_start, last_frame, animation_job, clip_start
+    if animation_job is not None:
+        root.after_cancel(animation_job)
+        animation_job = None
     wall = time.monotonic()
     now = animation_now()
     if folded:
         update_peek(wall)
-        root.after(100, animate)
+        animation_job = root.after(100, animate)
         return
-    if reaction_start is not None and (now - reaction_start) * 1000 >= sum(manifest['clips']['hug']['durations']):
+    if reaction_start is not None and (now - reaction_start) * 1000 >= sum(manifest['clips'][reaction_name]['durations']):
+        shift = sum(manifest['clips'][reaction_name]['durations'])
+        shift_background(shift)
         reaction_start = None
-    name = 'hug' if reaction_start is not None else state
+    name = reaction_name if reaction_start is not None else state
     elapsed = (now - (reaction_start if reaction_start is not None else clip_start)) * 1000
     index = frame_at(manifest['clips'][name], elapsed)
+    delay = frame_delay(manifest['clips'][name], elapsed)
     held = interaction.sample(wall*1000)
-    if held is not None: name,index = held
-    elif state == 'idle' and reaction_start is None: name, index = idle.sample(now*1000)
-    elif state in ('working','tool','editing') and reaction_start is None: name,index = work.sample(state,now*1000)
+    if held is not None:
+        name,index = held
+        delay = interaction.next_delay
+    elif state == 'idle' and reaction_start is None:
+        name, index = idle.sample(now*1000)
+        delay = idle.next_delay
+    elif state in ('working','tool','editing') and reaction_start is None:
+        name,index = work.sample(state,now*1000)
+        delay = work.next_delay
     if root.winfo_viewable() and (name, index) != last_frame:
         canvas.itemconfigure(img, image=frames_for(name)[index])
         last_frame = (name, index)
     if wall >= bubble_end:
         canvas.itemconfigure(text_id, text=(activity_detail or {'working':'正在处理你的请求','tool':'正在调用工具','editing':'正在更新文件'}.get(state,'')) if state in ('working','tool','editing') and not mute else '')
-    root.after(80, animate)
+    animation_job = root.after(math.ceil(delay), animate)
 
 say('嗨～一起写代码吧！')
-root.after(150, animate)
+root.deiconify()
+animation_job = root.after(16, animate)
 root.after(100, monitor)
 root.mainloop()

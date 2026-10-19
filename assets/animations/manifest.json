@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "frameSize": [
     256,
     342
@@ -16,8 +16,18 @@
       "rice_full"
     ],
     "initialHoldMs": 22000,
-    "restMinMs": 18000,
-    "restMaxMs": 45000
+    "restMinMs": 22000,
+    "restMaxMs": 45000,
+    "weights": {
+      "idle": 5,
+      "walk": 3,
+      "sit": 3,
+      "nap": 1,
+      "stretch": 2,
+      "rice_scoop": 1,
+      "rice_hug": 1,
+      "rice_full": 1
+    }
   },
   "clips": {
     "idle": {
@@ -46,69 +56,97 @@
     "working": {
       "frames": [
         "working/00.png",
+        "work_bridge/00.png",
         "working/01.png",
+        "work_bridge/01.png",
         "working/02.png",
+        "work_bridge/02.png",
         "working/03.png",
+        "work_bridge/03.png",
         "working/04.png",
+        "work_bridge/04.png",
         "working/05.png",
+        "work_bridge/05.png",
         "working/06.png",
-        "working/07.png"
+        "work_bridge/06.png",
+        "working/07.png",
+        "work_bridge/07.png"
       ],
       "durations": [
-        480,
-        320,
-        320,
-        480,
-        240,
-        480,
-        320,
-        480
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140,
+        140
       ],
       "loop": true
     },
     "tool": {
       "frames": [
-        "tool/00.png",
-        "tool/01.png",
-        "tool/02.png",
-        "tool/03.png",
-        "tool/04.png",
-        "tool/05.png",
-        "tool/06.png",
-        "tool/07.png"
+        "work_pause/00.png",
+        "work_pause/01.png",
+        "work_pause/02.png",
+        "work_pause/03.png",
+        "work_pause/02.png",
+        "work_pause/01.png"
       ],
       "durations": [
-        800,
-        700,
-        900,
-        1200,
-        900,
-        1200,
-        700,
-        800
+        500,
+        400,
+        450,
+        650,
+        450,
+        400
       ],
       "loop": true
     },
     "editing": {
       "frames": [
         "editing/00.png",
+        "work_bridge/00.png",
         "editing/01.png",
+        "work_bridge/01.png",
         "editing/02.png",
+        "work_bridge/02.png",
         "editing/03.png",
+        "work_bridge/03.png",
         "editing/04.png",
+        "work_bridge/04.png",
         "editing/05.png",
+        "work_bridge/05.png",
         "editing/06.png",
-        "editing/07.png"
+        "work_bridge/06.png",
+        "editing/07.png",
+        "work_bridge/07.png"
       ],
       "durations": [
-        320,
-        240,
-        240,
-        320,
-        240,
-        320,
-        240,
-        320
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110,
+        110
       ],
       "loop": true
     },
@@ -124,14 +162,14 @@
         "done/07.png"
       ],
       "durations": [
-        800,
-        600,
-        600,
-        700,
-        600,
-        600,
-        700,
-        1600
+        180,
+        240,
+        260,
+        280,
+        280,
+        320,
+        380,
+        700
       ],
       "loop": false
     },
@@ -147,14 +185,14 @@
         "hug/07.png"
       ],
       "durations": [
+        120,
+        140,
+        160,
         240,
-        240,
-        240,
-        240,
-        240,
-        240,
-        240,
-        320
+        280,
+        220,
+        160,
+        180
       ],
       "loop": false
     },
@@ -183,6 +221,14 @@
     },
     "sit": {
       "frames": [
+        "sit_down/00.png",
+        "sit_down/01.png",
+        "sit_down/02.png",
+        "sit_down/03.png",
+        "sit_down/04.png",
+        "sit_down/05.png",
+        "sit_down/06.png",
+        "sit_down/07.png",
         "sit/00.png",
         "sit/01.png",
         "sit/02.png",
@@ -190,22 +236,64 @@
         "sit/04.png",
         "sit/05.png",
         "sit/06.png",
-        "sit/07.png"
+        "sit/07.png",
+        "sit_down/07.png",
+        "sit_down/06.png",
+        "sit_down/05.png",
+        "sit_down/04.png",
+        "sit_down/03.png",
+        "sit_down/02.png",
+        "sit_down/01.png",
+        "sit_down/00.png",
+        "idle/00.png"
       ],
       "durations": [
-        1200,
-        200,
-        320,
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
         400,
+        180,
+        120,
         240,
-        400,
-        320,
-        1000
+        180,
+        180,
+        240,
+        4500,
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        320
       ],
       "loop": false
     },
     "nap": {
       "frames": [
+        "sit_down/00.png",
+        "sit_down/01.png",
+        "sit_down/02.png",
+        "sit_down/03.png",
+        "sit_down/04.png",
+        "sit_down/05.png",
+        "sit_down/06.png",
+        "sit_down/07.png",
+        "lie_down/00.png",
+        "lie_down/01.png",
+        "lie_down/02.png",
+        "lie_down/03.png",
+        "lie_down/04.png",
+        "lie_down/05.png",
+        "lie_down/06.png",
+        "lie_down/07.png",
         "nap/00.png",
         "nap/01.png",
         "nap/02.png",
@@ -213,22 +301,80 @@
         "nap/04.png",
         "nap/05.png",
         "nap/06.png",
-        "nap/07.png"
+        "nap/07.png",
+        "lie_down/07.png",
+        "lie_down/06.png",
+        "lie_down/05.png",
+        "lie_down/04.png",
+        "lie_down/03.png",
+        "lie_down/02.png",
+        "lie_down/01.png",
+        "lie_down/00.png",
+        "sit_down/07.png",
+        "sit_down/06.png",
+        "sit_down/05.png",
+        "sit_down/04.png",
+        "sit_down/03.png",
+        "sit_down/02.png",
+        "sit_down/01.png",
+        "sit_down/00.png",
+        "idle/00.png"
       ],
       "durations": [
-        800,
-        500,
-        1200,
-        500,
-        500,
-        1200,
-        500,
-        800
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        300,
+        300,
+        2400,
+        300,
+        300,
+        2400,
+        300,
+        600,
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        320
       ],
       "loop": false
     },
     "stretch": {
       "frames": [
+        "sit_down/00.png",
+        "sit_down/01.png",
+        "sit_down/02.png",
+        "sit_down/03.png",
+        "sit_down/04.png",
+        "sit_down/05.png",
+        "sit_down/06.png",
+        "sit_down/07.png",
         "stretch/00.png",
         "stretch/01.png",
         "stretch/02.png",
@@ -236,17 +382,43 @@
         "stretch/04.png",
         "stretch/05.png",
         "stretch/06.png",
-        "stretch/07.png"
+        "stretch/07.png",
+        "sit_down/07.png",
+        "sit_down/06.png",
+        "sit_down/05.png",
+        "sit_down/04.png",
+        "sit_down/03.png",
+        "sit_down/02.png",
+        "sit_down/01.png",
+        "sit_down/00.png",
+        "idle/00.png"
       ],
       "durations": [
-        500,
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        240,
+        180,
+        240,
+        400,
         320,
-        500,
-        500,
-        500,
-        500,
-        320,
-        800
+        240,
+        180,
+        400,
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        320
       ],
       "loop": false
     },
@@ -259,17 +431,19 @@
         "walk/04.png",
         "walk/05.png",
         "walk/06.png",
-        "walk/07.png"
+        "walk/07.png",
+        "idle/00.png"
       ],
       "durations": [
-        500,
-        400,
-        400,
-        400,
-        400,
-        400,
-        400,
-        700
+        260,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        320,
+        320
       ],
       "loop": false
     },
@@ -285,14 +459,14 @@
         "work_start/07.png"
       ],
       "durations": [
-        500,
-        600,
-        750,
-        600,
-        750,
-        600,
-        600,
-        1000
+        180,
+        240,
+        300,
+        260,
+        300,
+        240,
+        260,
+        300
       ],
       "loop": false
     },
@@ -308,14 +482,14 @@
         "work_pause/07.png"
       ],
       "durations": [
-        800,
-        700,
-        900,
-        1200,
-        900,
-        1200,
-        700,
-        800
+        240,
+        240,
+        320,
+        650,
+        320,
+        650,
+        260,
+        320
       ],
       "loop": false
     },
@@ -328,17 +502,19 @@
         "rice_scoop/04.png",
         "rice_scoop/05.png",
         "rice_scoop/06.png",
-        "rice_scoop/07.png"
+        "rice_scoop/07.png",
+        "idle/00.png"
       ],
       "durations": [
-        800,
-        600,
-        600,
-        480,
-        600,
-        600,
-        1000,
-        1200
+        360,
+        280,
+        240,
+        300,
+        360,
+        360,
+        400,
+        1400,
+        320
       ],
       "loop": false
     },
@@ -351,22 +527,32 @@
         "rice_hug/04.png",
         "rice_hug/05.png",
         "rice_hug/06.png",
-        "rice_hug/07.png"
+        "rice_hug/07.png",
+        "idle/00.png"
       ],
       "durations": [
-        800,
-        600,
-        600,
-        800,
-        1000,
-        1000,
-        700,
-        1200
+        360,
+        280,
+        240,
+        300,
+        360,
+        360,
+        400,
+        1400,
+        320
       ],
       "loop": false
     },
     "rice_full": {
       "frames": [
+        "sit_down/00.png",
+        "sit_down/01.png",
+        "sit_down/02.png",
+        "sit_down/03.png",
+        "sit_down/04.png",
+        "sit_down/05.png",
+        "sit_down/06.png",
+        "sit_down/07.png",
         "rice_full/00.png",
         "rice_full/01.png",
         "rice_full/02.png",
@@ -374,17 +560,43 @@
         "rice_full/04.png",
         "rice_full/05.png",
         "rice_full/06.png",
-        "rice_full/07.png"
+        "rice_full/07.png",
+        "sit_down/07.png",
+        "sit_down/06.png",
+        "sit_down/05.png",
+        "sit_down/04.png",
+        "sit_down/03.png",
+        "sit_down/02.png",
+        "sit_down/01.png",
+        "sit_down/00.png",
+        "idle/00.png"
       ],
       "durations": [
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        360,
+        280,
+        240,
+        300,
+        400,
         800,
-        600,
-        600,
-        700,
-        800,
-        1200,
-        700,
-        1400
+        400,
+        1800,
+        100,
+        100,
+        120,
+        140,
+        140,
+        120,
+        100,
+        100,
+        320
       ],
       "loop": false
     },
@@ -410,6 +622,86 @@
         160
       ],
       "loop": true
+    },
+    "work_pet": {
+      "frames": [
+        "work_pause/00.png",
+        "work_pause/01.png",
+        "work_pause/02.png",
+        "work_pause/01.png",
+        "work_pause/00.png"
+      ],
+      "durations": [
+        180,
+        220,
+        300,
+        220,
+        180
+      ],
+      "loop": false
+    },
+    "sit_pet": {
+      "frames": [
+        "sit/01.png",
+        "sit/02.png",
+        "sit/03.png",
+        "sit/04.png",
+        "sit/05.png",
+        "sit/06.png"
+      ],
+      "durations": [
+        160,
+        180,
+        200,
+        220,
+        200,
+        160
+      ],
+      "loop": false
+    },
+    "nap_pet": {
+      "frames": [
+        "nap/00.png",
+        "nap/01.png",
+        "nap/02.png",
+        "nap/01.png",
+        "nap/00.png"
+      ],
+      "durations": [
+        200,
+        220,
+        300,
+        220,
+        200
+      ],
+      "loop": false
+    },
+    "land": {
+      "frames": [
+        "sit_down/03.png",
+        "sit_down/02.png",
+        "sit_down/01.png",
+        "sit_down/00.png",
+        "idle/00.png"
+      ],
+      "durations": [
+        80,
+        100,
+        100,
+        120,
+        180
+      ],
+      "loop": false
     }
+  },
+  "reactions": {
+    "working": "work_pet",
+    "editing": "work_pet",
+    "tool": "work_pet",
+    "sit": "sit_pet",
+    "sit_down": "sit_pet",
+    "nap": "nap_pet",
+    "lie_down": "nap_pet",
+    "sleep": "nap_pet"
   }
 }
