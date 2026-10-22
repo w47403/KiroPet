@@ -75,15 +75,53 @@ class SessionMonitor {
     this.candidates = [];
     this.needsDiscovery = false;
     this.pendingPoll = false;
+    this.scopeRevision = 0;
+    this.baselineWorkspaces = new Set();
+    this.running = false;
     this.diagnostics = {matched: 0, unsupported: 0, errors: 0, malformed: 0, oversized: 0, records: 0, lastRecordAt: 0, rootExists: false};
   }
   start() {
-    if (!this.workspaces.length) return this;
+    this.running = true;
+    if (this.disposed || !this.workspaces.length || this.timer) return this;
     this.ensureWatcher();
     void this.poll();
     this.timer = setInterval(() => { this.ensureWatcher(); void this.poll(); }, this.interval);
     this.timer.unref?.();
     return this;
+  }
+  update({workspaces = this.workspaces, showReply = this.showReply} = {}) {
+    if (this.disposed) return this;
+    const previous = new Set(this.workspaces.map(normalize));
+    const current = new Set(workspaces.map(normalize));
+    const changed = previous.size !== current.size || [...current].some(w => !previous.has(w));
+    this.workspaces = [...workspaces];
+    this.showReply = showReply;
+    if (!showReply) {
+      for (const [file, activity] of this.sessions) this.sessions.set(file, {...activity, reply: '', replyUntil: 0});
+    }
+    if (changed) {
+      this.scopeRevision++;
+      for (const workspace of current) if (!previous.has(workspace)) this.baselineWorkspaces.add(workspace);
+      this.candidates = this.candidates.filter(c => this.inScope(c));
+      const present = new Set(this.candidates.map(c => c.file));
+      for (const file of this.files.keys()) if (!present.has(file)) { this.files.delete(file); this.sessions.delete(file); }
+      this.diagnostics.matched = this.candidates.length;
+      if (!workspaces.length) this.stopWatching();
+      else {
+        if (this.running) this.start();
+        this.schedule(true);
+      }
+    }
+    this.publish();
+    return this;
+  }
+  inScope(candidate) {
+    return !!this.workspaces.length && (!candidate.workspaces || candidate.workspaces.some(w => this.workspaces.some(root => normalize(root) === normalize(w))));
+  }
+  stopWatching() {
+    clearInterval(this.timer); clearTimeout(this.debounce);
+    this.timer = null; this.debounce = null;
+    this.watcher?.close(); this.watcher = null;
   }
   ensureWatcher() {
     if (this.watcher || this.disposed) return;
@@ -122,8 +160,7 @@ class SessionMonitor {
   }
   dispose() {
     this.disposed = true;
-    clearInterval(this.timer); clearTimeout(this.debounce);
-    this.watcher?.close(); this.watcher = null;
+    this.stopWatching();
     this.files.clear(); this.sessions.clear();
   }
   async directories(dir) {
@@ -146,8 +183,9 @@ class SessionMonitor {
           const meta = JSON.parse(await fs.readFile(metaFile, 'utf8'));
           if (!belongsToWorkspace(meta, this.workspaces)) continue;
           if (meta.dataModelVersion !== 1 || !String(meta.schemaVersion).startsWith('1.')) { this.diagnostics.unsupported++; continue; }
-          const matched = this.workspaces.find(w => (meta.workspacePaths || meta.rootPaths).some(r => typeof r === 'string' && normalize(r) === normalize(w)));
-          result.push({file: path.join(dir, 'messages.jsonl'), project: path.basename(matched), session: path.basename(dir)});
+          const matched = this.workspaces.filter(w => (meta.workspacePaths || meta.rootPaths).some(r => typeof r === 'string' && normalize(r) === normalize(w)));
+          result.push({file: path.join(dir, 'messages.jsonl'), project: path.basename(matched[0]), session: path.basename(dir),
+            workspaces: matched, baseline: matched.every(w => this.baselineWorkspaces.has(normalize(w)))});
           this.diagnostics.matched++;
         } catch (err) { if (err.code !== 'ENOENT') this.diagnostics.errors++; }
       }
@@ -158,17 +196,19 @@ class SessionMonitor {
     if (this.disposed) return;
     if (this.busy) { this.pendingPoll = true; this.needsDiscovery ||= discover; return; }
     this.busy = true;
+    const revision = this.scopeRevision;
     try {
       const candidates = discover ? await this.discover() : this.candidates;
+      if (this.disposed || revision !== this.scopeRevision) { this.needsDiscovery = true; this.pendingPoll = !!this.workspaces.length; return; }
       this.candidates = candidates;
       const present = new Set(candidates.map(c => c.file));
       for (const file of this.files.keys()) if (!present.has(file)) { this.files.delete(file); this.sessions.delete(file); }
       for (const candidate of candidates) {
-        if (this.disposed) break;
-        try { await this.read(candidate); }
+        if (this.disposed || revision !== this.scopeRevision) break;
+        try { await this.read(candidate, revision); }
         catch (err) { if (err.code !== 'ENOENT') this.diagnostics.errors++; }
       }
-      this.initialized = true;
+      if (revision === this.scopeRevision) { this.initialized = true; if (discover) this.baselineWorkspaces.clear(); }
       if (!this.disposed) this.publish();
     } catch (_) { this.diagnostics.errors++; }
     finally {
@@ -176,10 +216,10 @@ class SessionMonitor {
       if (this.pendingPoll && !this.disposed) { this.pendingPoll = false; this.schedule(); }
     }
   }
-  async read(candidate) {
+  async read(candidate, revision = this.scopeRevision) {
     const {file} = candidate;
     const stat = await fs.lstat(file);
-    if (!stat.isFile()) return;
+    if (this.disposed || revision !== this.scopeRevision || !this.inScope(candidate) || !stat.isFile()) return;
     let cursor = this.files.get(file);
     const first = !cursor;
     if (!cursor) {
@@ -189,7 +229,7 @@ class SessionMonitor {
     if (!first && cursor.size === stat.size && cursor.mtime === stat.mtimeMs) return;
     const handle = await fs.open(file, 'r');
     try {
-      if (first && !this.initialized) {
+      if (first && (!this.initialized || candidate.baseline)) {
         // Baseline by seeking to EOF, not parsing megabytes of old conversations.
         cursor.offset = stat.size;
         cursor.anchor = Buffer.alloc(Math.min(128, stat.size));
@@ -224,7 +264,7 @@ class SessionMonitor {
               cursor.seen.set(event.id, digest);
               if (cursor.seen.size > 10000) cursor.seen.delete(cursor.seen.keys().next().value);
               const live = this.initialized && event.at >= this.startedAt;
-              if (!duplicate && live) this.accept(candidate, event);
+              if (!duplicate && live && revision === this.scopeRevision) this.accept(candidate, event);
             }
           } catch (_) { this.diagnostics.malformed++; }
         }
@@ -240,6 +280,7 @@ class SessionMonitor {
     } finally { await handle.close(); }
   }
   accept(candidate, event) {
+    if (this.disposed || !this.inScope(candidate)) return;
     let previous = this.sessions.get(candidate.file);
     // Opening/restoring a chat can run standalone tools with their own execution
     // IDs. They are not an AI turn and must never create a busy session.
@@ -276,8 +317,8 @@ class SessionMonitor {
     const all = [...this.sessions.values()];
     const active = all.filter(s => ['working', 'tool', 'editing'].includes(s.state));
     const selected = (active.length ? active : all).sort((a, b) => b.at - a.at)[0];
-    if (!selected) return;
-    const activity = {...selected, activeSessions: active.length};
+    if (!selected && this.lastPublished === undefined) return;
+    const activity = selected ? {...selected, activeSessions: active.length} : null;
     const signature = JSON.stringify(activity);
     if (signature !== this.lastPublished) { this.lastPublished = signature; this.onActivity(activity); }
   }

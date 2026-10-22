@@ -1,0 +1,1331 @@
+{
+  "version": 1,
+  "frameSize": [
+    256,
+    342
+  ],
+  "notes": {
+    "coordinateOrder": "Uniform scale around pose anchor, then whole-frame dx/dy. upper is an additional post-transform displacement with weight 1 through cutoffY, linearly tapering to 0 at cutoffY+feather.",
+    "measurement": "Main connected subject at alpha>=64; full-alpha bbox includes near-transparent neighboring-cell residue and is unsuitable for baseline registration.",
+    "posePreservation": "Do not force a static head center through walking, dragging, stretching, lying down, work setup or completion. Their silhouette/face changes encode intended actions.",
+    "sit_down": "The source crouch reaches a lower head position than its seated endpoint; lifting only the upper region in frames2/3 prevents the deep dip followed by an upward bounce. sit uses0.90 uniform scale so its larger authored head/body agrees with the transition endpoint.",
+    "nap_sleep": "The source second row is displaced upward about43px. Main subject baselines331,330,331,331,286,287,288,288 are normalized first. A12px upper settle makes the head closer to the lie_down endpoint.",
+    "desk": "All desk clips have zero whole-frame transformation. Static head offsets use premultiplied-RGBA ROI registration against working/00; intentional leaning/stretching work_pause3..5 is retained.",
+    "done": "The standing completion row was authored significantly smaller. Frames3..7 are brought toward the standing idle height while its desk-removal action is preserved.",
+    "work_start": "Initial standing poses are slightly resized to agree with idle. Settled desk row is left for its authored prop movement and the existing desk lock.",
+    "schemaStatus": "Hand-reviewed final registration; all registered keyframe contact sheets inspected. Baseline and transition anchor validation saved to output/animation-v0110-audit-agent/registration-validation.json.",
+    "dropComponents": "Original untransformed [left,top,rightExclusive,bottomExclusive] rectangles. Expanded3px around confirmed neighboring-cell fragments. Each has zero intersection with the main subject at alpha>=32; do not remove intentional sit motion marks or rice emotion symbols."
+  },
+  "poses": {
+    "done": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 2.3,
+          "scale": 1.15
+        },
+        {
+          "dx": 0,
+          "dy": 30.0,
+          "scale": 1.2
+        },
+        {
+          "dx": 0,
+          "dy": 24.78,
+          "scale": 1.18
+        },
+        {
+          "dx": 0,
+          "dy": 23.8,
+          "scale": 1.19
+        },
+        {
+          "dx": 0,
+          "dy": 22.61,
+          "scale": 1.19
+        }
+      ]
+    },
+    "drag": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        }
+      ]
+    },
+    "editing": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 2,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 6,
+            "dy": -1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -4,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -2,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": -1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        }
+      ]
+    },
+    "hug": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0,
+          "dropComponents": [
+            [
+              5,
+              191,
+              28,
+              221
+            ]
+          ]
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        }
+      ]
+    },
+    "idle": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        }
+      ]
+    },
+    "lie_down": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 7,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 6,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 18,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 19,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 13,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 10,
+          "scale": 1.0
+        }
+      ]
+    },
+    "nap": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 1,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 45,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 44,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 43,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 43,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        }
+      ]
+    },
+    "rice_full": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 5,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 24,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 25,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 27,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 15,
+          "scale": 1.0
+        }
+      ]
+    },
+    "rice_hug": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 5,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 4,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 5,
+          "scale": 1.0
+        }
+      ]
+    },
+    "rice_scoop": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": -10,
+            "cutoffY": 190,
+            "feather": 50
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": -10,
+            "cutoffY": 190,
+            "feather": 50
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": -10,
+            "cutoffY": 190,
+            "feather": 50
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": -10,
+            "cutoffY": 190,
+            "feather": 50
+          }
+        }
+      ]
+    },
+    "sit": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0.9,
+          "scale": 0.9
+        },
+        {
+          "dx": 0,
+          "dy": 0.9,
+          "scale": 0.9
+        },
+        {
+          "dx": 0,
+          "dy": 0.9,
+          "scale": 0.9
+        },
+        {
+          "dx": 0,
+          "dy": 0.9,
+          "scale": 0.9
+        },
+        {
+          "dx": 0,
+          "dy": 18.0,
+          "scale": 0.9
+        },
+        {
+          "dx": 0,
+          "dy": 17.1,
+          "scale": 0.9
+        },
+        {
+          "dx": 0,
+          "dy": 18.0,
+          "scale": 0.9
+        },
+        {
+          "dx": 0,
+          "dy": 15.3,
+          "scale": 0.9
+        }
+      ]
+    },
+    "sit_down": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 2,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": -6,
+            "cutoffY": 240,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": -22,
+            "cutoffY": 240,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 15,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 15,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 15,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 15,
+          "scale": 1.0
+        }
+      ]
+    },
+    "sleep": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 1,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 45,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 44,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 43,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 43,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 12,
+            "cutoffY": 260,
+            "feather": 60
+          }
+        }
+      ]
+    },
+    "stretch": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 5,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 7,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 7,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 7,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 32,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 32,
+          "scale": 1.0,
+          "dropComponents": [
+            [
+              5,
+              156,
+              20,
+              190
+            ],
+            [
+              5,
+              189,
+              19,
+              209
+            ]
+          ]
+        },
+        {
+          "dx": 0,
+          "dy": 29,
+          "scale": 1.0,
+          "dropComponents": [
+            [
+              5,
+              241,
+              18,
+              267
+            ]
+          ]
+        },
+        {
+          "dx": 0,
+          "dy": 26,
+          "scale": 1.0,
+          "dropComponents": [
+            [
+              5,
+              253,
+              14,
+              270
+            ]
+          ]
+        }
+      ]
+    },
+    "walk": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 5,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 5,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 5,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 5,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 16,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 16,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 16,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 16,
+          "scale": 1.0
+        }
+      ]
+    },
+    "work_bridge": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 4,
+            "dy": 2,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 5,
+            "dy": 1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 5,
+            "dy": -1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -3,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": -1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": -2,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": -2,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        }
+      ]
+    },
+    "work_pause": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": -2,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": -4,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -1,
+            "dy": 1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -1,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        }
+      ]
+    },
+    "work_start": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 8.4,
+          "scale": 1.05
+        },
+        {
+          "dx": 0,
+          "dy": 7.35,
+          "scale": 1.05
+        },
+        {
+          "dx": 0,
+          "dy": 6.3,
+          "scale": 1.05
+        },
+        {
+          "dx": 0,
+          "dy": 7.35,
+          "scale": 1.05
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        }
+      ]
+    },
+    "working": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 2,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 6,
+            "dy": -1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -4,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -2,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": -1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        }
+      ]
+    },
+    "tool": {
+      "anchor": [
+        128,
+        331
+      ],
+      "frames": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 0,
+            "dy": 1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": -2,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": 1,
+            "dy": -4,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -1,
+            "dy": 1,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        },
+        {
+          "dx": 0,
+          "dy": 0,
+          "scale": 1.0,
+          "upper": {
+            "dx": -1,
+            "dy": 0,
+            "cutoffY": 185,
+            "feather": 29
+          }
+        }
+      ]
+    }
+  }
+}

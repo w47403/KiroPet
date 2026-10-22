@@ -1,8 +1,9 @@
 ﻿param(
   [Parameter(Mandatory = $true)][string]$AssetPath,
   [Parameter(Mandatory = $true)][string]$StatePath,
-  [int]$InitialSize = 190,
-  [int]$ParentProcessId = 0
+  [int]$InitialSize = 140,
+  [int]$ParentProcessId = 0,
+  [string]$PreferencesPath = ''
 )
 
 # A tiny Windows WPF desktop companion: offline, no networking, no elevated permissions.
@@ -11,12 +12,19 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Windows.Forms
+$runtimeScripts = Join-Path (Split-Path -Parent (Split-Path -Parent $AssetPath)) 'scripts'
+. (Join-Path $runtimeScripts 'PetPreferences.ps1')
+. (Join-Path $runtimeScripts 'animation_timing.ps1')
 
-$script:whaleSize = [Math]::Max(100, [Math]::Min(320, $InitialSize))
-$script:mute = $false
+$script:configuredSize = [Math]::Max(100, [Math]::Min(320, $InitialSize))
+$script:preferences = Read-PetPreferences $PreferencesPath $script:configuredSize
+$script:whaleSize = $script:preferences.size
+$script:mute = $script:preferences.mute
+$script:notifyOnDone = $script:preferences.notifyOnDone
 $script:tickStart = [DateTime]::UtcNow
 $script:lastState = 'idle'
 $script:lastEventKey = ''
+$script:lastTransitionKey = ''
 $script:bubbleUntil = [DateTime]::UtcNow
 $script:mood = 'idle'
 $script:activityDetail = ''
@@ -45,6 +53,7 @@ $script:window.AllowsTransparency = $true
 $script:window.Background = [System.Windows.Media.Brushes]::Transparent
 $script:window.Topmost = $true
 $script:window.ShowInTaskbar = $false
+$script:window.ShowActivated = $false
 $script:window.Left = [System.Windows.SystemParameters]::WorkArea.Right - $script:window.Width - 26
 $script:window.Top = [System.Windows.SystemParameters]::WorkArea.Bottom - $script:window.Height - 20
 
@@ -80,8 +89,13 @@ $script:workAccentStart = $null
 $script:workNext = [DateTime]::MaxValue
 $script:workState = ''
 $script:loopStart = [DateTime]::UtcNow
+$script:typingPhase = 0.0
+$script:toolPhase = 0.0
+$script:sleepStarted = $null
 function Initialize-FrameCache {
   # Decode before showing the window, never on the animation/UI timer.
+  $script:frameCache.Clear()
+  $script:bitmapCache.Clear()
   foreach ($name in $script:manifest.clips.PSObject.Properties.Name) {
     $frames = @()
     foreach ($relative in $script:manifest.clips.$name.frames) {
@@ -90,6 +104,8 @@ function Initialize-FrameCache {
       $frame.BeginInit()
       $frame.UriSource = [System.Uri]::new((Join-Path $script:animationFolder $relative), [System.UriKind]::Absolute)
       $frame.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+      $frame.DecodePixelHeight = [int]$script:whaleSize
+      $frame.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::IgnoreImageCache
       $frame.EndInit(); $frame.Freeze()
       $frames += $frame
       $script:bitmapCache[$relative] = $frame
@@ -102,17 +118,35 @@ function Switch-Art([string]$name, [bool]$Restart = $false) {
   if ($name -eq 'happy') { $name = 'working' }
   if ($null -eq $script:manifest.clips.PSObject.Properties[$name]) { $name = 'idle' }
   if ($name -in @('working','tool','editing') -and ($name -ne $script:workState -or $Restart)) {
-    $script:workState=$name; $script:loopStart=Get-AnimationTime
+    $time=Get-AnimationTime
+    $introLength=($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
+    if ($script:taskActive -and -not $Restart -and $time -ge $script:taskStart.AddMilliseconds($introLength)) {
+      if ($script:workAccentStart) {
+        $accentLength=($script:manifest.clips.work_pause.durations | Measure-Object -Sum).Sum
+        $script:loopStart=$script:loopStart.AddMilliseconds([Math]::Min($accentLength,($time-$script:workAccentStart).TotalMilliseconds))
+        $script:workAccentStart=$null
+      }
+      $oldLength=($script:manifest.clips.($script:workState).durations | Measure-Object -Sum).Sum
+      $phase=([Math]::Max(0,($time-$script:loopStart).TotalMilliseconds) % $oldLength)/$oldLength
+      if ($script:workState -eq 'tool') { $script:toolPhase=$phase } else { $script:typingPhase=$phase }
+      $nextLength=($script:manifest.clips.$name.durations | Measure-Object -Sum).Sum
+      $nextPhase=if ($name -eq 'tool') { $script:toolPhase } else { $script:typingPhase }
+      $script:loopStart=$time.AddMilliseconds(-$nextPhase*$nextLength)
+    }
+    $script:workState=$name
   }
-  if ($name -in @('working','tool','editing') -and -not $script:taskActive) {
+  if ($name -in @('working','tool','editing') -and (-not $script:taskActive -or $Restart)) {
     $script:taskActive=$true; $script:taskStart=Get-AnimationTime; $script:workAccentStart=$null
     $length=($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
+    $script:loopStart=$script:taskStart.AddMilliseconds($length)
+    $script:typingPhase=0.0; $script:toolPhase=0.0
     $script:workNext=$script:taskStart.AddMilliseconds($length+18000)
   } elseif ($name -in @('idle','sleep','done')) {
     $script:taskActive=$false; $script:workAccentStart=$null
   }
   if ($script:clipName -eq $name -and -not $Restart) { return }
   if ($name -eq 'done' -and ($Restart -or $script:clipName -ne 'drag')) { $script:doneStarted=Get-AnimationTime }
+  if ($name -eq 'sleep' -and ($Restart -or -not $script:sleepStarted -or $script:clipName -notin @('drag','sleep','nap_pet'))) { $script:sleepStarted=Get-AnimationTime }
   $script:clipName = $name
   $script:clipStart = Get-AnimationTime
   $script:lastFrameIndex = -1
@@ -159,12 +193,16 @@ function Apply-Size([int]$newSize) {
   $script:window.Height = $newSize + 76
   $script:picture.Width = $newSize
   $script:picture.Height = $newSize
+  Initialize-FrameCache
+  $script:lastFrameIndex=-1
+  if ($script:animate) { Update-Animation }
   $script:bubbleText.MaxWidth = $newSize + 18
   $script:dockSide = ''
+  Save-PetWindow
 }
 
 # Coordinates are WPF DIPs; convert the current monitor's pixel work area for DPI.
-$script:dockEnabled = $true
+$script:dockEnabled = $script:preferences.dockEnabled
 $script:dockSide = ''
 $script:folded = $false
 $script:dragging = $false
@@ -188,7 +226,18 @@ $script:peekPicture.IsHitTestVisible = $false
 # Crop the approved idle face. Blink by swapping sprites, never by bouncing the window.
 $script:peekFaces = @{}
 foreach ($entry in @(@('smile',4),@('open',0),@('blink',3))) {
-  $source = $script:frameCache['idle'][$entry[1]]
+  # Peek crops use the full-resolution original, independently of display-size caches.
+  $idleClip=$script:manifest.clips.idle
+  $sourceIndex=[int]$entry[1]
+  if ($idleClip.sources) {
+    $sourceIndex=[Array]::IndexOf([object[]]$idleClip.sources,('idle/{0:00}.png' -f $entry[1]))
+    if ($sourceIndex -lt 0) { $sourceIndex=0 }
+  }
+  $source=New-Object System.Windows.Media.Imaging.BitmapImage
+  $source.BeginInit()
+  $source.UriSource=[System.Uri]::new((Join-Path $script:animationFolder $idleClip.frames[$sourceIndex]),[System.UriKind]::Absolute)
+  $source.CacheOption=[System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+  $source.EndInit(); $source.Freeze()
   $crop = [System.Windows.Media.Imaging.CroppedBitmap]::new($source,[System.Windows.Int32Rect]::new(20,12,216,216))
   $crop.Freeze()
   $script:peekFaces[$entry[0]] = $crop
@@ -269,9 +318,10 @@ function Expand-Dock([bool]$immediate = $false) {
   $script:dockTab.Visibility = [System.Windows.Visibility]::Collapsed
   Move-Smooth $script:dockX $script:dockY $immediate
   $script:hideAt = [DateTime]::MaxValue
+  if ($script:animate) { $script:animate.Interval=[TimeSpan]::FromMilliseconds(16); Update-Animation }
 }
 function Fold-Dock {
-  if (-not $script:dockSide -or -not $script:dockEnabled -or $script:dragging -or $script:root.IsMouseOver -or $menu.IsOpen) { return }
+  if ($script:dockSide -notin @('left','right') -or -not $script:dockEnabled -or $script:dragging -or $script:root.IsMouseOver -or $menu.IsOpen) { return }
   $area = $script:dockArea
   $x = $script:dockX; $y = $script:dockY
   $tab = $script:peekExposure
@@ -281,8 +331,6 @@ function Fold-Dock {
   switch ($script:dockSide) {
     'left' { $x=$area.Left-$script:window.Width+$tab; $script:dockTab.HorizontalAlignment='Right' }
     'right' { $x=$area.Right-$tab; $script:dockTab.HorizontalAlignment='Left' }
-    'top' { $y=$area.Top-$script:window.Height+$tab; $script:dockTab.VerticalAlignment='Bottom'; $script:dockTab.Width=74; $script:dockTab.Height=$tab }
-    'bottom' { $y=$area.Bottom-$tab; $script:dockTab.VerticalAlignment='Top'; $script:dockTab.Width=74; $script:dockTab.Height=$tab }
   }
   $script:folded = $true
   $script:foldedAt = [DateTime]::UtcNow
@@ -295,25 +343,43 @@ function Fold-Dock {
 }
 function Snap-Dock {
   $script:dockSide = ''
+  $script:hideAt = [DateTime]::MaxValue
   if (-not $script:dockEnabled) { return }
   $area = Get-WorkRect
   $x=$script:window.Left; $y=$script:window.Top
   $distances = @{
     left=[Math]::Abs($x-$area.Left); right=[Math]::Abs($area.Right-$x-$script:window.Width)
-    top=[Math]::Abs($y-$area.Top); bottom=[Math]::Abs($area.Bottom-$y-$script:window.Height)
   }
   $nearest = $distances.GetEnumerator() | Sort-Object Value | Select-Object -First 1
   if ($nearest.Value -gt 36) { return }
   $script:dockSide = $nearest.Key
   $x=[Math]::Max($area.Left,[Math]::Min($area.Right-$script:window.Width,$x))
   $y=[Math]::Max($area.Top,[Math]::Min($area.Bottom-$script:window.Height,$y))
-  # At corners snap both coordinates while retaining one reveal edge.
+  # Keep the dragged height, including near corners; only clamp off-screen positions.
   if ($distances.left -le 36) { $x=$area.Left } elseif ($distances.right -le 36) { $x=$area.Right-$script:window.Width }
-  if ($distances.top -le 36) { $y=$area.Top } elseif ($distances.bottom -le 36) { $y=$area.Bottom-$script:window.Height }
   $script:dockX=$x; $script:dockY=$y; $script:dockArea=$area
   Move-Smooth $x $y
   $script:hideAt=[DateTime]::UtcNow.AddMilliseconds(1400)
 }
+function Save-PetWindow {
+  $x=$script:window.Left; $y=$script:window.Top
+  if ($script:dockSide) { $x=$script:dockX; $y=$script:dockY }
+  Write-PetPreferences $PreferencesPath @{size=$script:whaleSize; configuredSize=$script:configuredSize;
+    left=$x; top=$y; mute=$script:mute; dockEnabled=$script:dockEnabled; notifyOnDone=$script:notifyOnDone}
+}
+function Restore-PetWindow {
+  if (-not $script:preferences.ContainsKey('left') -or -not $script:preferences.ContainsKey('top')) { return }
+  $source=[System.Windows.PresentationSource]::FromVisual($script:window)
+  $matrix=[System.Windows.Media.Matrix]::Identity
+  if ($source) { $matrix=$source.CompositionTarget.TransformFromDevice }
+  $areas=@([System.Windows.Forms.Screen]::AllScreens | ForEach-Object {
+    $a=$_.WorkingArea
+    [System.Windows.Rect]::new($matrix.Transform([System.Windows.Point]::new($a.Left,$a.Top)),$matrix.Transform([System.Windows.Point]::new($a.Right,$a.Bottom)))
+  })
+  $point=Get-PetPosition $script:preferences.left $script:preferences.top $script:window.Width $script:window.Height $areas
+  if ($point) { Move-Smooth $point[0] $point[1] $true }
+}
+$script:window.Add_Loaded({ Restore-PetWindow })
 $script:root.Add_MouseEnter({ Expand-Dock })
 $script:root.Add_MouseLeave({ if ($script:dockSide -and -not $script:dragging) { $script:hideAt=[DateTime]::UtcNow.AddMilliseconds(1200) } })
 $script:dockTab.Add_MouseLeftButtonDown({ Expand-Dock $true })
@@ -331,6 +397,7 @@ function Restore-Reaction([double]$shift) {
   $script:taskStart = $script:taskStart.AddMilliseconds($shift)
   $script:loopStart = $script:loopStart.AddMilliseconds($shift)
   if ($script:doneStarted) { $script:doneStarted = $script:doneStarted.AddMilliseconds($shift) }
+  if ($script:sleepStarted) { $script:sleepStarted = $script:sleepStarted.AddMilliseconds($shift) }
   if ($script:idleStarted) { $script:idleStarted = $script:idleStarted.AddMilliseconds($shift) }
   if ($script:workAccentStart) { $script:workAccentStart = $script:workAccentStart.AddMilliseconds($shift) }
   if ($script:workNext -ne [DateTime]::MaxValue) { $script:workNext = $script:workNext.AddMilliseconds($shift) }
@@ -338,10 +405,23 @@ function Restore-Reaction([double]$shift) {
   Switch-Art $script:reactionSavedClip
   $script:clipStart = $script:reactionSavedStart.AddMilliseconds($shift)
 }
+function Cancel-Reaction {
+  if ($script:reactionUntil) {
+    $elapsed=$script:reactionLength-($script:reactionUntil-[DateTime]::UtcNow).TotalMilliseconds
+    Restore-Reaction ([Math]::Max(0,[Math]::Min($script:reactionLength,$elapsed)))
+  }
+}
 function Invoke-PetReaction {
   if ($script:reactionUntil -or $script:dragging) { return }
+  $introLength=($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
+  $inIntro=$script:taskActive -and $script:mood -in @('working','tool','editing') -and ((Get-AnimationTime)-$script:taskStart).TotalMilliseconds -lt $introLength
+  if ($script:mood -eq 'done' -or $inIntro -or $script:clipName -in @('work_start','done')) { Say '摸摸头，继续加油！'; return }
   $pose = $script:clipName
-  if ($script:lastFrameIndex -ge 0) { $pose = ($script:manifest.clips.($script:clipName).frames[$script:lastFrameIndex] -split '/')[0] }
+  if ($script:lastFrameIndex -ge 0) {
+    $clip=$script:manifest.clips.($script:clipName)
+    $sources=if ($clip.sources) { $clip.sources } else { $clip.frames }
+    $pose=($sources[$script:lastFrameIndex] -split '/')[-2]
+  }
   if ($pose -in @('work_start','done','sit_down','lie_down','rice_scoop','rice_hug','rice_full')) { Say '摸摸头，继续加油！'; return }
   $name = $script:manifest.reactions.($script:mood)
   if (-not $name) { $name = $script:manifest.reactions.$pose }
@@ -355,15 +435,15 @@ function Invoke-PetReaction {
   Update-Animation
 }
 Add-MenuItem $menu '🐋 摸摸鲸鱼娘' { Invoke-PetReaction }
-Add-MenuItem $menu '💻 工作中' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'working'; Switch-Art 'happy'; Say '正在认真写代码！' }
-Add-MenuItem $menu '🛠 调用工具' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'tool'; Switch-Art 'tool'; Say '工具准备好啦～' }
-Add-MenuItem $menu '📝 修改文件' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'editing'; Switch-Art 'editing'; Say '正在更新文件～' }
-Add-MenuItem $menu '✨ 完成啦' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'done'; Switch-Art 'done' $true; Say '任务完成！辛苦啦～' }
+Add-MenuItem $menu '💻 工作中' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'working'; Switch-Art 'happy'; Say '正在认真写代码！' }
+Add-MenuItem $menu '🛠 调用工具' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'tool'; Switch-Art 'tool'; Say '工具准备好啦～' }
+Add-MenuItem $menu '📝 修改文件' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'editing'; Switch-Art 'editing'; Say '正在更新文件～' }
+Add-MenuItem $menu '✨ 完成啦' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'done'; Switch-Art 'done' $true; Say '任务完成！辛苦啦～' }
 Add-MenuItem $menu '💤 休息一下' {
-  $script:activityDetail=''; $script:reactionUntil=$null; $script:mood='idle'; $script:idleName='idle'; $script:idleStarted=$null
+  $script:activityDetail=''; Cancel-Reaction; $script:mood='idle'; $script:idleName='idle'; $script:idleStarted=$null
   $script:idleNext=(Get-AnimationTime).AddSeconds(22); Switch-Art 'idle' $true; Say '休息一会儿也不错～'
 }
-Add-MenuItem $menu '🌙 打个盹' { $script:activityDetail=''; $script:reactionUntil=$null; $script:mood = 'sleep'; Switch-Art 'sleep'; Say '呼噜呼噜～' }
+Add-MenuItem $menu '🌙 打个盹' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'sleep'; Switch-Art 'sleep' $true; Say '呼噜呼噜～' }
 [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
 Add-MenuItem $menu '小小只 (140px)' { Apply-Size 140 }
 Add-MenuItem $menu '正常大小 (190px)' { Apply-Size 190 }
@@ -372,13 +452,20 @@ Add-MenuItem $menu '大大只 (260px)' { Apply-Size 260 }
 Add-MenuItem $menu '静音 / 恢复气泡' {
   $script:mute = -not $script:mute
   if ($script:mute) { $script:bubble.Visibility = [System.Windows.Visibility]::Collapsed } else { Say '我回来啦～' }
+  Save-PetWindow
 }
 Add-MenuItem $menu '退出桌宠' { $script:window.Close() }
-Add-MenuItem $menu '边缘吸附与收起：开启 / 关闭' {
+Add-MenuItem $menu '左右吸附与收起：开启 / 关闭' {
   Expand-Dock $true
   $script:dockEnabled = -not $script:dockEnabled
   if (-not $script:dockEnabled) { $script:dockSide = '' }
-  Say $(if ($script:dockEnabled) { '边缘吸附已开启～' } else { '边缘吸附已关闭～' })
+  Say $(if ($script:dockEnabled) { '左右吸附已开启～' } else { '左右吸附已关闭～' })
+  Save-PetWindow
+}
+Add-MenuItem $menu '完成时自动展开：开启 / 关闭' {
+  $script:notifyOnDone = -not $script:notifyOnDone
+  Say $(if ($script:notifyOnDone) { '完成时会展开提醒～' } else { '完成时保持探头待机～' })
+  Save-PetWindow
 }
 $script:picture.ContextMenu = $menu
 $script:root.ContextMenu = $menu
@@ -402,9 +489,7 @@ $script:picture.Add_MouseLeftButtonDown({
 
 function Begin-PetDrag {
   if ($script:dragging) { return }
-  if ($script:reactionUntil) {
-    Restore-Reaction ([Math]::Max(0,[Math]::Min($script:reactionLength,$script:reactionLength-($script:reactionUntil-[DateTime]::UtcNow).TotalMilliseconds)))
-  }
+  Cancel-Reaction
   $script:dragging=$true; $script:dragStarted=[DateTime]::UtcNow
   $script:reactionUntil=$null
   $script:picture.Cursor=[System.Windows.Input.Cursors]::SizeAll
@@ -432,7 +517,7 @@ function Finish-PetPress([bool]$Canceled = $false) {
   End-PetDrag
   $script:pressPoint=$null
   $script:picture.ReleaseMouseCapture()
-  if ($moved) { Snap-Dock
+  if ($moved) { Snap-Dock; Save-PetWindow
   } elseif (-not $Canceled) {
     Invoke-PetReaction
   }
@@ -465,6 +550,7 @@ function Update-Activity {
         $event = $raw | ConvertFrom-Json
         $next = [string]$event.state
         $eventKey = "$($event.at)|$($event.state)|$($event.project)|$($event.detail)|$($event.reply)|$($event.replyUntil)"
+        $transitionKey = "$($event.at)|$($event.state)|$($event.session)"
         $project = [string]$event.project
         $script:activityDetail = [string]$event.detail
         $script:eventCount = [int]$event.eventCount
@@ -475,15 +561,18 @@ function Update-Activity {
         # Compatible with events written by v0.1.x.
         $next = $raw
         $eventKey = $raw
+        $transitionKey = $raw
         $project = ''
         $script:activityDetail = ''
         $script:lastActivityAt = [DateTime]::UtcNow
       }
       if ($eventKey -ne $script:lastEventKey) {
-        if ($raw.StartsWith('{') -and $event.phase -eq 'start') { $script:taskActive=$false; $script:workAccentStart=$null }
-        $script:reactionUntil = $null
         $script:lastEventKey = $eventKey
         $script:lastState = $next
+        if ($transitionKey -ne $script:lastTransitionKey) {
+        $script:lastTransitionKey = $transitionKey
+        Cancel-Reaction
+        if ($raw.StartsWith('{') -and $event.phase -eq 'start') { $script:taskActive=$false; $script:workAccentStart=$null }
         if ($next -eq 'idle' -and $script:mood -ne 'idle') {
           $script:idleName='idle'; $script:idleStarted=$null; $script:idleNext=(Get-AnimationTime).AddSeconds(22)
         }
@@ -493,15 +582,16 @@ function Update-Activity {
           'tool' { $script:mood = 'tool'; Switch-Art 'tool'; Say "${projectHint}正在调用工具…" 2 }
           'editing' { $script:mood = 'editing'; Switch-Art 'editing'; Say "${projectHint}文件更新啦～" 2 }
           'done' {
-            if ($script:folded) {
+            if ($script:folded -and $script:notifyOnDone) {
               Expand-Dock
               if ($script:dockSide) { $script:hideAt = [DateTime]::UtcNow.AddSeconds(9) }
             }
             $script:mood = 'done'; Switch-Art 'done' $true; Say "${projectHint}任务完成啦！✨" 5
           }
           'idle' { $script:mood = 'idle'; Switch-Art 'idle'; Say '待机中，随时出发～' 2 }
-          'sleep' { $script:mood = 'sleep'; Switch-Art 'sleep'; Say '呼噜呼噜～' 2 }
+          'sleep' { $restartSleep=$script:mood -ne 'sleep'; $script:mood = 'sleep'; Switch-Art 'sleep' $restartSleep; Say '呼噜呼噜～' 2 }
           'hello' { Say '我在这里～' 2 }
+        }
         }
         if ($script:activityDetail) { Say $script:activityDetail 3 }
         if ($raw.StartsWith('{') -and $event.reply -and $event.replyUntil) {
@@ -522,8 +612,9 @@ function Update-Animation {
   if ([DateTime]::UtcNow -ge $script:hideAt) { Fold-Dock }
   if ($script:folded) {
     Update-Peek
-    $script:animate.Interval = [TimeSpan]::FromMilliseconds(80)
-    if (([DateTime]::UtcNow-$script:foldedAt).TotalMilliseconds -ge 340) { $script:picture.Visibility = [System.Windows.Visibility]::Hidden }
+    $elapsed=([DateTime]::UtcNow-$script:foldedAt).TotalMilliseconds
+    $script:animate.Interval = [TimeSpan]::FromMilliseconds((Get-PeekDelay $elapsed $script:mood))
+    if ($elapsed -ge 340) { $script:picture.Visibility = [System.Windows.Visibility]::Hidden }
     return
   }
   if (-not $script:window.IsVisible -or $script:window.WindowState -eq [System.Windows.WindowState]::Minimized) { return }
@@ -541,7 +632,10 @@ function Update-Animation {
     if ($workElapsed -lt $introLength) { Switch-Art 'work_start'
     } else {
       $accentLength=($script:manifest.clips.work_pause.durations | Measure-Object -Sum).Sum
-      if ($script:workAccentStart -and ($now-$script:workAccentStart).TotalMilliseconds -ge $accentLength) { $script:workAccentStart=$null }
+      if ($script:workAccentStart -and ($now-$script:workAccentStart).TotalMilliseconds -ge $accentLength) {
+        $script:loopStart=$script:loopStart.AddMilliseconds($accentLength)
+        $script:workAccentStart=$null
+      }
       if ($script:mood -ne 'tool' -and -not $script:workAccentStart -and $now -ge $script:workNext -and $accentLength -gt 0) {
         $script:workAccentStart=$now
         $script:workNext=$now.AddMilliseconds($accentLength+(Get-Random -Minimum 18000 -Maximum 35001))
@@ -567,29 +661,20 @@ function Update-Animation {
     } elseif ($script:clipName -ne $script:idleName) { Switch-Art $script:idleName }
   }
   $clip = $script:manifest.clips.($script:clipName)
-  $total = 0
-  foreach ($duration in $clip.durations) { $total += $duration }
   $elapsed = ($now - $script:clipStart).TotalMilliseconds
   if ($script:clipName -eq 'done' -and $script:doneStarted) { $elapsed=($now-$script:doneStarted).TotalMilliseconds }
+  if ($script:clipName -eq 'sleep' -and $script:sleepStarted) { $elapsed=($now-$script:sleepStarted).TotalMilliseconds }
   if ($script:dragging) { $elapsed=([DateTime]::UtcNow-$script:dragStarted).TotalMilliseconds }
   if ($working) {
     $elapsed = if ($script:clipName -eq 'work_start') { $workElapsed
     } elseif ($script:workAccentStart -and $script:mood -ne 'tool') { ($now-$script:workAccentStart).TotalMilliseconds
-    } else { ($now - $(if ($script:loopStart -gt $script:taskStart.AddMilliseconds($introLength)) { $script:loopStart } else { $script:taskStart.AddMilliseconds($introLength) })).TotalMilliseconds }
+    } else { ($now-$script:loopStart).TotalMilliseconds }
   }
   if ($quiet -and $script:idleStarted) { $elapsed = ($now-$script:idleStarted).TotalMilliseconds }
-  if (($clip.loop -or ($working -and $script:mood -eq 'tool' -and $script:clipName -eq 'work_pause')) -and -not $quiet) { $elapsed = $elapsed % $total }
   if ($quiet -and -not $script:idleStarted) { $elapsed = 0 }
-  $index = $clip.frames.Count - 1
-  $nextFrameMs = 250
-  for ($i = 0; $i -lt $clip.durations.Count; $i++) {
-    if ($elapsed -lt $clip.durations[$i]) {
-      $index = $i
-      $nextFrameMs = $clip.durations[$i] - $elapsed
-      break
-    }
-    $elapsed -= $clip.durations[$i]
-  }
+  $loop=($clip.loop -or ($working -and $script:mood -eq 'tool' -and $script:clipName -eq 'work_pause')) -and -not $quiet
+  $sample=Get-FrameSample $clip $elapsed $loop
+  $index=$sample.index; $nextFrameMs=$sample.delay
   # Sleep until the next frame boundary; a held pose needs no 60Hz polling.
   $script:animate.Interval = [TimeSpan]::FromMilliseconds([Math]::Max(16, [Math]::Min(250, $nextFrameMs)))
   if ($index -ne $script:lastFrameIndex) {
@@ -606,6 +691,7 @@ function Update-Animation {
 }
 $script:animate.Add_Tick({ Update-Animation })
 $script:window.Add_Closed({
+  Save-PetWindow
   $script:animate.Stop()
   $script:monitor.Stop()
 })

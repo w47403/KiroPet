@@ -9,6 +9,7 @@ $verification = @'
 
 $destination = Join-Path (Split-Path -Parent (Split-Path -Parent $AssetPath)) 'output/wpf-validation'
 [void][System.IO.Directory]::CreateDirectory($destination)
+if ($script:whaleSize -ne 140) { throw 'Default pet size must be small (140px)' }
 if ($script:frameCache.Count -ne $script:manifest.clips.PSObject.Properties.Name.Count) { throw 'All clips must be decoded before playback' }
 foreach ($name in $script:manifest.clips.PSObject.Properties.Name) {
   Switch-Art $name $true
@@ -35,7 +36,7 @@ $script:window.Opacity=0
 $script:window.ShowActivated=$false
 $script:window.Show()
 Snap-Dock
-if (-not $script:dockSide -or $script:dockX -ne -1920 -or $script:dockY -ne 0) { throw 'Corner snapping failed' }
+if ($script:dockSide -ne 'left' -or $script:dockX -ne -1920 -or $script:dockY -ne 12) { throw 'Left docking must preserve the dragged height near a corner' }
 Move-Smooth $script:dockX $script:dockY $true
 Fold-Dock
 if (-not $script:folded -or $script:dockTab.Visibility -ne 'Visible') { throw 'Dock tab failed' }
@@ -62,15 +63,33 @@ foreach ($clock in $script:motionClocks) {
 }
 if ([Math]::Abs($script:window.Left-(-1920-$script:window.Width+56)) -gt 1) { throw 'Hide animation did not settle' }
 Expand-Dock $true
-if ($script:folded -or $script:window.Left -ne -1920 -or $script:window.Top -ne 0) { throw 'Dock reveal failed' }
-Write-Output 'WPF snap, cubic animation setup, folded tab and reveal passed on negative screen coordinates.'
+if ($script:folded -or $script:window.Left -ne -1920 -or $script:window.Top -ne 12) { throw 'Dock reveal failed' }
+foreach ($y in @(12,(1080-$script:window.Height-12))) {
+  Move-Smooth -900 $y $true
+  Snap-Dock
+  if ($script:dockSide -or $script:window.Top -ne $y -or $script:window.Left -ne -900) { throw 'Top/bottom edges must not attract or fold the pet' }
+  Fold-Dock
+  if ($script:folded) { throw 'A top/bottom placement must not fold' }
+}
+Move-Smooth (-$script:window.Width+10) 14 $true
+Snap-Dock
+if ($script:dockSide -ne 'right' -or $script:dockX -ne -$script:window.Width -or $script:dockY -ne 14) { throw 'Right docking failed to preserve height' }
+Move-Smooth $script:dockX $script:dockY $true
+Fold-Dock
+foreach ($clock in $script:motionClocks) { $clock.Controller.SeekAlignedToLastTick([TimeSpan]::FromMilliseconds(400),[System.Windows.Media.Animation.TimeSeekOrigin]::BeginTime) }
+if ([Math]::Abs($script:window.Left-(-56)) -gt 1 -or $script:window.Top -ne 14) { throw 'Right folded exposure or height is wrong' }
+Expand-Dock $true
+Write-Output 'WPF small default, left/right-only docking, folded exposure and vertical-position preservation passed.'
 $script:reactionUntil=$null
 $script:taskActive=$false
 $script:mood='working'
 Switch-Art 'working'
 Update-Animation
 if ($script:clipName -ne 'work_start') { throw 'Expected task setup' }
-$script:taskStart=[DateTime]::UtcNow.AddMilliseconds(-2000)
+Invoke-PetReaction
+if ($script:reactionUntil) { throw 'Registered idle entry pose allowed a pat during setup' }
+$introLength=($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
+$script:taskStart=[DateTime]::UtcNow.AddMilliseconds(-0.6*$introLength)
 $beforeTask=$script:taskStart
 Update-Animation
 $beforeFrame=$script:picture.Source
@@ -100,20 +119,23 @@ $script:mood='done'; Switch-Art 'done' $true
 $script:clipStart=[DateTime]::UtcNow.AddSeconds(-10)
 $script:doneStarted=$script:clipStart
 Update-Animation
-if ($script:taskActive -or $script:clipName -ne 'done' -or $script:lastFrameIndex -ne 7) { throw 'Completion phase failed' }
+if ($script:taskActive -or $script:clipName -ne 'done' -or $script:lastFrameIndex -ne ($script:manifest.clips.done.frames.Count-1)) { throw 'Completion phase failed' }
 Write-Output 'WPF task setup, uninterrupted tool handoff, working loop, variation and completion passed.'
 $script:mood='working'; Switch-Art 'working' $true
-$script:taskStart=(Get-AnimationTime).AddMilliseconds(-2000)
+$script:taskStart=(Get-AnimationTime).AddMilliseconds(-0.6*$introLength)
 Update-Animation
 $beforeClock=Get-AnimationTime
 Begin-PetDrag
 $heldClock=Get-AnimationTime
-$script:dragStarted=$script:dragStarted.AddMilliseconds(-160)
+$dragElapsed=$script:manifest.clips.drag.durations[0]+20
+$dragIndex=(Get-FrameSample $script:manifest.clips.drag $dragElapsed $true).index
+$script:dragStarted=$script:dragStarted.AddMilliseconds(-$dragElapsed)
 Update-Animation
-if ($script:clipName -ne 'drag' -or $script:lastFrameIndex -ne 1) { throw 'Collar drag did not animate' }
-$script:dragStarted=$script:dragStarted.AddMilliseconds(-1280)
+if ($script:clipName -ne 'drag' -or $script:lastFrameIndex -ne $dragIndex) { throw 'Collar drag did not animate' }
+$dragLength=($script:manifest.clips.drag.durations | Measure-Object -Sum).Sum
+$script:dragStarted=$script:dragStarted.AddMilliseconds(-$dragLength)
 Update-Animation
-if ($script:lastFrameIndex -ne 1) { throw 'Collar drag did not loop' }
+if ($script:lastFrameIndex -ne $dragIndex) { throw 'Collar drag did not loop' }
 End-PetDrag
 Update-Animation
 if ($script:dragging -or $script:clipName -ne 'work_start') { throw 'Drag did not resume task setup' }
@@ -148,6 +170,39 @@ $script:mood='idle'; Switch-Art 'idle' $true
 Begin-PetDrag; End-PetDrag; Update-Animation
 if ($script:clipName -ne 'land') { throw 'Missing idle landing recovery' }
 $script:reactionUntil=$null
+$originalClock=${function:Get-AnimationTime}
+$script:testAnimationClock=[DateTime]::UtcNow
+function Get-AnimationTime { return $script:testAnimationClock }
+try {
+  $script:mood='working'; Switch-Art 'working' $true
+  $workingLength=($script:manifest.clips.working.durations | Measure-Object -Sum).Sum
+  $editingLength=($script:manifest.clips.editing.durations | Measure-Object -Sum).Sum
+  $script:testAnimationClock=$script:taskStart.AddMilliseconds($introLength+0.63*$workingLength)
+  $script:mood='editing'; Switch-Art 'editing'
+  $phase=($script:testAnimationClock-$script:loopStart).TotalMilliseconds/$editingLength
+  if ([Math]::Abs($phase-0.63) -gt 0.001) { throw 'Work/editing switch reset the typing phase' }
+  $script:mood='tool'; Switch-Art 'tool'
+  $script:testAnimationClock=$script:testAnimationClock.AddMilliseconds(700)
+  $script:mood='working'; Switch-Art 'working'
+  if ([Math]::Abs(($script:testAnimationClock-$script:loopStart).TotalMilliseconds/$workingLength-0.63) -gt 0.001) { throw 'Tool exit lost the saved typing pose' }
+  Update-Animation
+  Invoke-PetReaction
+  $beforeCancel=$script:loopStart
+  $script:reactionUntil=[DateTime]::UtcNow.AddMilliseconds($script:reactionLength-600)
+  Cancel-Reaction
+  $shift=($script:loopStart-$beforeCancel).TotalMilliseconds
+  if ([Math]::Abs($shift-600) -gt 50) { throw 'Early reaction cancellation skipped background frames' }
+  $script:mood='sleep'; Switch-Art 'sleep' $true
+  $script:testAnimationClock=$script:testAnimationClock.AddMilliseconds(2500)
+  Update-Animation
+  $sleepStart=$script:sleepStarted; $sleepIndex=$script:lastFrameIndex
+  Begin-PetDrag; End-PetDrag; Update-Animation
+  if ($script:sleepStarted -ne $sleepStart -or $script:lastFrameIndex -ne $sleepIndex) { throw 'Sleep restarted after dragging' }
+  $script:reactionUntil=$null
+} finally {
+  Set-Item Function:Get-AnimationTime $originalClock
+}
+Write-Output 'WPF preserves rapid-event phases, compensates interrupted reactions, and resumes sleep after dragging.'
 foreach ($size in @(100,140,190,260,320)) {
   Apply-Size $size
   $script:root.Measure([System.Windows.Size]::new($script:window.Width,$script:window.Height))
@@ -157,9 +212,44 @@ foreach ($size in @(100,140,190,260,320)) {
 }
 $unique=@($script:manifest.clips.PSObject.Properties | ForEach-Object { $_.Value.frames } | Sort-Object -Unique)
 if ($script:bitmapCache.Count -ne $unique.Count) { throw 'Duplicate decoded frame allocations' }
+foreach ($bitmap in $script:bitmapCache.Values) {
+  if ($bitmap.PixelHeight -gt $script:whaleSize) { throw 'Animation bitmap was not decoded at display size' }
+}
 Write-Output "WPF contextual reactions, landing, five sizes and $($unique.Count) shared decoded images passed."
+$script:folded=$true; $script:foldedAt=[DateTime]::UtcNow.AddMilliseconds(-6000)
+Update-Animation
+if ($script:animate.Interval.TotalMilliseconds -lt 1000) { throw 'Folded player still uses high-frequency polling' }
+Expand-Dock $true
+Apply-Size 260
+$script:mute=$true; $script:dockEnabled=$false; $script:notifyOnDone=$false
+Save-PetWindow
+$saved=Read-PetPreferences $PreferencesPath 140
+if ($saved.size -ne 260 -or -not $saved.mute -or $saved.dockEnabled -or $saved.notifyOnDone) { throw 'Preferences did not survive a round trip' }
+if ((Read-PetPreferences $PreferencesPath 190).size -ne 190) { throw 'Explicit size setting must override saved menu size' }
+$legacyPreferences=@{version=1; size=190; configuredSize=190; mute=$false; dockEnabled=$true; notifyOnDone=$true}
+Write-PetPreferences $PreferencesPath $legacyPreferences
+if ((Read-PetPreferences $PreferencesPath).size -ne 140) { throw 'Old default-size preferences must not defeat the new small default' }
+$areas=@([System.Windows.Rect]::new(-1920,0,1920,1080),[System.Windows.Rect]::new(0,0,1920,1040))
+$point=Get-PetPosition -1800 100 232 266 $areas
+if ($point[0] -ne -1800 -or $point[1] -ne 100) { throw 'Saved negative-monitor position was lost' }
+$point=Get-PetPosition -1800 100 232 266 @($areas[1])
+if ($point[0] -ne 0 -or $point[1] -ne 100) { throw 'Removed-monitor position was not recovered' }
+Write-Output 'WPF saved preferences, removed-monitor recovery and folded blink deadlines passed.'
+$event=@{state='done'; phase='finish'; at=1234; reply='answer'; replyUntil=0}
+[System.IO.File]::WriteAllText($StatePath,($event|ConvertTo-Json))
+Update-Activity
+$doneStart=$script:doneStarted
+$event.reply=''
+[System.IO.File]::WriteAllText($StatePath,($event|ConvertTo-Json))
+Update-Activity
+if ($script:doneStarted -ne $doneStart) { throw 'Preview change replayed the completion animation' }
 $script:animate.Stop()
 $script:monitor.Stop()
 $script:window.Close()
 '@
-& ([scriptblock]::Create($source + $verification)) -AssetPath (Join-Path $project 'assets/whale-girl.png') -StatePath (Join-Path $project 'output/test-activity.json')
+$preferencesFile=Join-Path $project ('output/preferences-test.'+[guid]::NewGuid().ToString('N')+'.json')
+try {
+  & ([scriptblock]::Create($source + $verification)) -AssetPath (Join-Path $project 'assets/whale-girl.png') -StatePath (Join-Path $project 'output/test-activity.json') -PreferencesPath $preferencesFile
+} finally {
+  if (Test-Path -LiteralPath $preferencesFile) { Remove-Item -LiteralPath $preferencesFile }
+}

@@ -260,3 +260,101 @@ test('watch discovers a newly created session without replaying history', async 
   await until(() => f.activities.length === 1);
   assert.equal(f.activities[0].session, 'new_session');
 });
+
+test('preview changes preserve a live turn, clear excerpts immediately and still receive its end', async t => {
+  const f = await fixture(t, {showReply: true});
+  await f.monitor.poll();
+  await f.append([row('user'), row('turn_start', {executionId: 'one'}),
+    row('assistant', {executionId: 'one', operationType: 'Say', content: '可见的回答。'})]);
+  await f.monitor.poll();
+  const before = f.activities.at(-1);
+  assert.equal(before.reply, '可见的回答。');
+  f.monitor.update({showReply: false});
+  assert.equal(f.activities.at(-1).reply, '');
+  assert.equal(f.activities.at(-1).startedAt, before.startedAt);
+  assert.equal(f.activities.at(-1).eventCount, before.eventCount);
+  f.monitor.update({showReply: true});
+  assert.equal(f.activities.at(-1).reply, '', 'enabling must not resurrect a cleared excerpt');
+  await f.append([row('tool_call', {executionId: 'one', toolName: 'read_file'}),
+    row('turn_end', {executionId: 'one', stopReason: 'end_turn'})]);
+  await f.monitor.poll();
+  assert.equal(f.activities.at(-1).state, 'done');
+  assert.equal(f.activities.at(-1).startedAt, before.startedAt);
+  assert.equal(f.activities.at(-1).eventCount, before.eventCount + 2);
+});
+
+test('adding and removing workspaces retains existing tasks without replaying added-project history', async t => {
+  const f = await fixture(t);
+  await f.monitor.poll();
+  await f.append([row('turn_start', {executionId: 'one'})]);
+  await f.monitor.poll();
+  const before = f.activities.at(-1);
+  const otherWorkspace = path.join(f.root, 'another-project');
+  const dir = path.join(f.root, 'hash', 'other-chat');
+  await fs.mkdir(dir);
+  await fs.writeFile(path.join(dir, 'session.json'), JSON.stringify({schemaVersion: '1.0.0', dataModelVersion: 1, workspacePaths: [otherWorkspace]}));
+  const otherFile = path.join(dir, 'messages.jsonl');
+  await fs.writeFile(otherFile, encode([row('turn_start', {executionId: 'unobserved'})]));
+  f.monitor.update({workspaces: [f.workspace, otherWorkspace]});
+  await f.monitor.poll();
+  assert.equal(f.activities.at(-1).session, before.session);
+  assert.equal(f.activities.at(-1).activeSessions, 1);
+  await fs.appendFile(otherFile, encode([row('tool_result', {executionId: 'unobserved'})]));
+  await f.append([row('turn_end', {executionId: 'one', stopReason: 'end_turn'})]);
+  await f.monitor.poll();
+  assert.equal(f.activities.at(-1).state, 'done');
+  assert.equal(f.activities.at(-1).startedAt, before.startedAt);
+  f.monitor.update({workspaces: [otherWorkspace]});
+  assert.equal(f.activities.at(-1), null, 'removing the last observed task must clear its display');
+  await f.append([row('user')]);
+  await fs.appendFile(otherFile, encode([row('turn_start', {executionId: 'new'})]));
+  await f.monitor.poll();
+  assert.equal(f.activities.at(-1).session, 'other-chat');
+  assert.equal(f.activities.at(-1).activeSessions, 1);
+});
+
+test('workspace removal during a discovery cannot resurrect an out-of-scope task', async t => {
+  const f = await fixture(t);
+  await f.monitor.poll();
+  await f.append([row('turn_start')]);
+  await f.monitor.poll();
+  let entered, release;
+  const discovered = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const discover = f.monitor.discover.bind(f.monitor);
+  f.monitor.discover = async () => { const candidates = await discover(); entered(); await gate; return candidates; };
+  const polling = f.monitor.poll();
+  await discovered;
+  f.monitor.update({workspaces: []});
+  release();
+  await polling;
+  assert.equal(f.activities.at(-1), null);
+  assert.equal(f.monitor.sessions.size, 0);
+  assert.equal(f.monitor.files.size, 0);
+  assert.equal(f.monitor.status().watching, false);
+});
+
+test('an in-flight read from before removal cannot revive the same workspace after it is re-added', async t => {
+  const f = await fixture(t);
+  await f.monitor.poll();
+  await f.append([row('turn_start')]);
+  await f.monitor.poll();
+  let entered, release;
+  const reading = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const read = f.monitor.read.bind(f.monitor);
+  f.monitor.read = async (candidate, revision) => { entered(); await gate; return read(candidate, revision); };
+  await f.append([row('user')]);
+  const polling = f.monitor.poll(false);
+  await reading;
+  f.monitor.update({workspaces: []});
+  f.monitor.update({workspaces: [f.workspace]});
+  release();
+  await polling;
+  assert.equal(f.activities.at(-1), null);
+  await f.monitor.poll();
+  assert.equal(f.activities.at(-1), null, 're-added workspace history must remain a baseline');
+  await f.append([row('turn_start')]);
+  await f.monitor.poll();
+  assert.equal(f.activities.at(-1).state, 'working');
+});

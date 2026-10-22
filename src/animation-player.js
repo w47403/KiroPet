@@ -1,6 +1,6 @@
 'use strict';
 
-// Shared timeline: a frame is an independently drawn pose, never a transformed still.
+// Timeline for registered key poses and their precomputed movement frames.
 (function (root) {
   function frameAt(clip, elapsed) {
     const durations = clip.durations;
@@ -41,19 +41,36 @@
       this.idleNext = this.started + (manifest.idleBehavior?.initialHoldMs ?? 22000);
       this.taskStarted = null;
       this.loopStarted = this.started;
+      this.typingPhase = 0;
+      this.toolPhase = 0;
       this.workAccent = null;
       this.workNext = Infinity;
     }
     setState(state, restart = false) {
       const next = this.manifest.clips[state] ? state : 'idle';
-      if (next === this.state && !restart) { this.reaction = null; return; }
       const active = name => ['working','tool','editing'].includes(name);
       const time = this.pausedAt === null ? this.now() : this.pausedAt;
-      this.loopStarted = time;
+      this.cancelReaction(time);
+      if (next === this.state && !restart) return;
+      const introLength = this.manifest.clips.work_start?.durations.reduce((a,b)=>a+b,0) || 0;
+      if (active(this.state) && active(next) && !restart && time >= this.taskStarted + introLength) {
+        if (this.workAccent) {
+          this.loopStarted += Math.min(time-this.workAccent.started,
+            this.manifest.clips[this.workAccent.name].durations.reduce((a,b)=>a+b,0));
+          this.workAccent = null;
+        }
+        const oldLength = this.manifest.clips[this.state].durations.reduce((a,b)=>a+b,0);
+        const phase = ((Math.max(0,time-this.loopStarted) % oldLength) / oldLength);
+        if (this.state === 'tool') this.toolPhase = phase;
+        else this.typingPhase = phase;
+        const nextLength = this.manifest.clips[next].durations.reduce((a,b)=>a+b,0);
+        this.loopStarted = time - (next === 'tool' ? this.toolPhase : this.typingPhase) * nextLength;
+      }
       if (active(next) && (!active(this.state) || restart)) {
         this.taskStarted = time;
-        const intro = this.manifest.clips.work_start;
-        this.workNext = time + (intro ? intro.durations.reduce((a,b)=>a+b,0) : 0) + 18000;
+        this.loopStarted = time + introLength;
+        this.typingPhase = this.toolPhase = 0;
+        this.workNext = time + introLength + 18000;
         this.workAccent = null;
       } else if (!active(next)) {
         this.taskStarted = null;
@@ -67,10 +84,19 @@
       this.idleStart = null;
       this.idleNext = this.started + (this.manifest.idleBehavior?.initialHoldMs ?? 22000);
     }
+    cancelReaction(time = this.pausedAt ?? this.now()) {
+      if (!this.reaction) return;
+      const duration = this.manifest.clips[this.reaction.name].durations.reduce((a,b)=>a+b,0);
+      this.shiftTimeline(Math.max(0,Math.min(duration,time-this.reaction.started)));
+      this.reaction = null;
+    }
     react(name = 'hug') {
       if (this.reaction || this.dragStarted !== null) return;
       if (name === 'hug') {
-        const pose = this.sample().path.split('/').slice(-2,-1)[0];
+        const current = this.sample();
+        if (['work_start','done'].includes(current.name)) return;
+        const source = this.manifest.clips[current.name].sources?.[current.index] || current.path;
+        const pose = source.split('/').slice(-2,-1)[0];
         if (['work_start','done','sit_down','lie_down','rice_scoop','rice_hug','rice_full'].includes(pose)) return;
         name = this.manifest.reactions?.[this.state] || this.manifest.reactions?.[pose] || name;
       }
@@ -78,11 +104,7 @@
     }
     beginDrag() {
       if (this.dragStarted !== null) return;
-      if (this.reaction) {
-        const duration = this.manifest.clips[this.reaction.name].durations.reduce((a,b)=>a+b,0);
-        this.shiftTimeline(Math.min(duration,(this.pausedAt ?? this.now())-this.reaction.started));
-        this.reaction = null;
-      }
+      this.cancelReaction();
       this.dragStarted = this.now();
       this.pause('drag');
     }
@@ -147,7 +169,10 @@
           return {name:'work_start',index,path:intro.frames[index]};
         }
         if (this.workAccent && time-this.workAccent.started >=
-            this.manifest.clips[this.workAccent.name].durations.reduce((a,b)=>a+b,0)) this.workAccent = null;
+            this.manifest.clips[this.workAccent.name].durations.reduce((a,b)=>a+b,0)) {
+          this.loopStarted += this.manifest.clips[this.workAccent.name].durations.reduce((a,b)=>a+b,0);
+          this.workAccent = null;
+        }
         if (!reducedMotion && this.state !== 'tool' && !this.workAccent &&
             time >= this.workNext && this.manifest.clips.work_pause) {
           this.workAccent = {name:'work_pause',started:time};
@@ -157,7 +182,7 @@
           this.workAccent ? this.workAccent.name : this.state;
         const clip = this.manifest.clips[name];
         const index = reducedMotion ? 0 : timedFrame(this.workAccent && this.state !== 'tool' ? {...clip,loop:false} : clip,
-          time-(this.workAccent && this.state !== 'tool' ? this.workAccent.started : Math.max(this.loopStarted,this.taskStarted+total)));
+          time-(this.workAccent && this.state !== 'tool' ? this.workAccent.started : this.loopStarted));
         if (!reducedMotion && this.state !== 'tool' && !this.workAccent)
           this.nextDelay = Math.max(16, Math.min(this.nextDelay, this.workNext - time));
         return {name,index,path:clip.frames[index]};

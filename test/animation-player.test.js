@@ -38,12 +38,11 @@ test('loading and visibility pauses compose and retain the latest event', () => 
 });
 
 test('every clip has matching assets and valid frame timings', () => {
-  assert.equal(manifest.clips.working.frames.length,16);
   assert.ok(manifest.clips.nap.frames.length>32);
   for (const clip of Object.values(manifest.clips)) {
     assert.ok(clip.frames.length >= 5);
     assert.equal(clip.durations.length, clip.frames.length);
-    assert.ok(clip.durations.every(value => value >= 80));
+    assert.ok(clip.durations.every(value => value >= 16));
     for (const file of clip.frames) assert.ok(fs.existsSync(path.join(root, 'assets/animations', file)));
     const total = clip.durations.reduce((sum, value) => sum + value, 0);
     assert.equal(frameAt(clip, clip.durations[0] - 1), 0);
@@ -102,7 +101,7 @@ test('completion holds final pose and a new completion can replay', () => {
   const player = new AnimationPlayer(manifest, () => now);
   player.setState('done');
   now = 10000;
-  assert.equal(player.sample().index, 7);
+  assert.equal(player.sample().index, manifest.clips.done.frames.length-1);
   player.setState('done', true);
   assert.equal(player.sample().index, 0);
 });
@@ -120,7 +119,7 @@ test('hidden panels freeze timeline including states received while hidden', () 
   assert.equal(player.sample().index, 0);
   now += manifest.clips.work_start.durations[0];
   assert.equal(player.sample().index, 1);
-  assert.equal(player.sample(true).index, 7);
+  assert.equal(player.sample(true).index, manifest.clips.work_start.frames.length-1);
 });
 
 test('task setup survives tool events, loops with breaks, and completion interrupts any phase', () => {
@@ -144,7 +143,7 @@ test('task setup survives tool events, loops with breaks, and completion interru
   assert.equal(player.sample().name,'done');
   assert.equal(player.sample().index,0);
   now+=10000;
-  assert.equal(player.sample().index,7);
+  assert.equal(player.sample().index,manifest.clips.done.frames.length-1);
   player.setState('working');
   assert.equal(player.sample().name,'work_start');
   now+=1000;
@@ -175,7 +174,7 @@ test('context reactions freeze and resume the exact background frame', () => {
   player.beginDrag();now+=1000;player.endDrag();
   assert.equal(player.sample().name,'land');
   now+=sum(manifest.clips.land.durations);
-  assert.equal(player.sample().path,'idle/00.png');
+  assert.equal(player.sample().path,manifest.clips.idle.frames[0]);
 });
 
 test('one hour of mixed events has bounded scheduling and valid frames', () => {
@@ -198,14 +197,71 @@ test('collar drag loops while task time freezes; new work events resume on relea
   player.setState('working');now=2000;
   const pose=player.sample();player.beginDrag();
   assert.equal(player.sample().name,'drag');
-  now+=160;assert.equal(player.sample().index,1);
-  now+=sum(manifest.clips.drag.durations);assert.equal(player.sample().index,1);
+  now+=160;assert.equal(player.sample().index,frameAt(manifest.clips.drag,160));
+  now+=sum(manifest.clips.drag.durations);assert.equal(player.sample().index,frameAt(manifest.clips.drag,160));
   player.endDrag();assert.deepEqual(player.sample(),pose);
   player.beginDrag();now+=20000;player.setState('done',true);
   assert.equal(player.sample().name,'drag');
   player.endDrag();assert.deepEqual([player.sample().name,player.sample().index],['done',0]);
   player.beginDrag();player.pause();now+=40000;player.resume();
   player.endDrag();assert.equal(player.sample().index,0);
+});
+
+test('rapid work events preserve typing phase and suspend it during tools', () => {
+  let now=0;
+  const player=new AnimationPlayer(manifest,()=>now,()=>0);
+  player.setState('working');
+  now=sum(manifest.clips.work_start.durations)+sum(manifest.clips.working.durations)*0.63;
+  const phase=()=>((now-player.loopStarted)%sum(manifest.clips[player.state].durations))/sum(manifest.clips[player.state].durations);
+  player.sample();
+  player.setState('editing');
+  assert.ok(Math.abs(phase()-.63)<1e-9);
+  now+=120;
+  const saved=phase();
+  player.setState('tool');
+  now+=700;
+  player.setState('working');
+  assert.ok(Math.abs(phase()-saved)<1e-9,'tools must retain the typing pose');
+  for(let i=0;i<30;i++) {
+    const before=phase();
+    player.setState(i%2?'working':'editing');
+    assert.ok(Math.abs(phase()-before)<1e-9,'event cadence must not restart the loop');
+  }
+  player.setState('done',true);
+  assert.equal(player.sample().name,'done');
+});
+
+test('same-state events cancel reactions without fast-forwarding the background', () => {
+  let now=0;
+  const player=new AnimationPlayer(manifest,()=>now,()=>0);
+  player.setState('working');
+  now=sum(manifest.clips.work_start.durations)+400;
+  const before=player.sample();
+  player.react();now+=600;
+  player.setState('working');
+  assert.deepEqual(player.sample(),before);
+  player.react();now+=200;player.setState('editing');
+  const length=sum(manifest.clips.editing.durations);
+  assert.ok(Math.abs((now-player.loopStarted)/length-400/sum(manifest.clips.working.durations))<1e-9);
+});
+
+test('sleep drag resumes the exact background pose', () => {
+  let now=0;
+  const player=new AnimationPlayer(manifest,()=>now);
+  player.setState('sleep');now=2500;
+  const before=player.sample();player.beginDrag();now+=9000;player.endDrag();
+  assert.deepEqual(player.sample(),before);
+});
+
+test('desk-side breaks resume the typing phase instead of skipping ahead', () => {
+  let now=0;
+  const player=new AnimationPlayer(manifest,()=>now,()=>0);
+  player.setState('working');now=player.workNext;
+  const elapsed=now-player.loopStarted;
+  assert.equal(player.sample().name,'work_pause');
+  now+=sum(manifest.clips.work_pause.durations);
+  const frame=player.sample();
+  assert.equal(frame.index,frameAt(manifest.clips.working,elapsed));
 });
 
 test('each rice animation is selectable, finishes once, and holds its quiet rest', () => {

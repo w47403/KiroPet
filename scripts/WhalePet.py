@@ -8,18 +8,23 @@ import random
 import sys
 import time
 import tkinter as tk
-from animation_runtime import frame_at, frame_delay, IdleDirector, WorkDirector, DragDirector
+from animation_runtime import frame_at, frame_delay, peek_delay, IdleDirector, WorkDirector, DragDirector
 from dock_runtime import TAB_EXPOSURE, snap, hidden_position, ease_out
+from preferences import read_preferences, save_preferences, restore_position
 
 p = argparse.ArgumentParser()
 p.add_argument('--image', required=True)
 p.add_argument('--state', required=True)
-p.add_argument('--size', type=int, default=190)
+p.add_argument('--size', type=int, default=140)
 p.add_argument('--parent', type=int, default=0)
+p.add_argument('--preferences', default='')
 a = p.parse_args()
 
 phrases = ['在呢～', '摸摸头，继续加油！', '今天也要写出漂亮的代码～', '呼噜呼噜～', '你写代码，我负责卖萌！']
 size = max(100, min(320, a.size))
+configured_size = size
+preferences = read_preferences(a.preferences, configured_size)
+size = preferences['size']
 root = tk.Tk()
 root.withdraw()
 root.title('Kiro 鲸鱼娘桌宠')
@@ -66,7 +71,9 @@ for clip_name in manifest['clips']:
 W, H = max(size, photo.width() + 18), photo.height() + 76
 screenw, screenh = root.winfo_screenwidth(), root.winfo_screenheight()
 x, y = screenw-W-32, screenh-H-95
-root.geometry(f'{W}x{H}+{x}+{y}')
+if 'left' in preferences and 'top' in preferences:
+    x, y = restore_position(preferences['left'], preferences['top'], W, H, [(0, 0, screenw, screenh)])
+root.geometry(f'{W}x{H}+{round(x)}+{round(y)}')
 canvas = tk.Canvas(root, width=W, height=H, bg='#e4f3fa', bd=0, highlightthickness=0)
 canvas.pack()
 img = canvas.create_image(W // 2, H-photo.height()//2, image=photo)
@@ -74,6 +81,7 @@ text_id = canvas.create_text(W // 2, 34, text='', fill='#225a81', font=('Arial',
 
 state = 'idle'
 last_state = None
+last_transition = None
 bubble_end = 0.0
 start_time = time.monotonic()
 clip_start = start_time
@@ -86,9 +94,10 @@ def animation_now(): return interaction.timeline(time.monotonic()*1000)/1000
 activity_detail = ''
 last_frame = None
 drag = None
-mute = False
+mute = preferences['mute']
+notify_on_done = preferences['notifyOnDone']
 popup_open = False
-dock_enabled = True
+dock_enabled = preferences['dockEnabled']
 dock_edge = None
 folded = False
 dock_position = None
@@ -97,7 +106,12 @@ hide_job = None
 # Show the original whale girl's peeking face, not a generic emoji.
 # Tk can crop/subsample existing PNGs without any installed image library.
 def peek_face(index):
-    raw = tk.PhotoImage(file=os.path.join(animation_dir, 'idle', f'{index:02}.png'))
+    clip=manifest['clips']['idle']
+    sources=clip.get('sources')
+    if sources:
+        original=f'idle/{index:02}.png'
+        index=sources.index(original) if original in sources else 0
+    raw = tk.PhotoImage(file=os.path.join(animation_dir,clip['frames'][index]))
     crop = tk.PhotoImage(width=216, height=216)
     crop.tk.call(str(crop), 'copy', str(raw), '-from', 20, 12, 236, 228, '-to', 0, 0)
     return crop.subsample(4, 4)  # 54x54px
@@ -143,11 +157,12 @@ def unfold(_=None):
     for item in (tab_id, tab_avatar, tab_badge): canvas.itemconfigure(item, state='hidden')
     canvas.itemconfigure(img, state='normal')
     smooth_to(*dock_position)
+    animate()
 
 def fold():
     global folded, hide_job, folded_at
     hide_job = None
-    if not dock_edge or not dock_enabled or drag is not None or popup_open: return
+    if dock_edge not in ('left', 'right') or not dock_enabled or drag is not None or popup_open: return
     px, py = root.winfo_pointerxy()
     if root.winfo_x() <= px < root.winfo_x()+W and root.winfo_y() <= py < root.winfo_y()+H: return
     folded = True
@@ -155,9 +170,7 @@ def fold():
     canvas.itemconfigure(text_id, text='')
     tab = TAB_EXPOSURE
     bounds = {'left':(W-tab,(H-74)//2,W,(H+74)//2),
-              'right':(0,(H-74)//2,tab,(H+74)//2),
-              'top':((W-74)//2,H-tab,(W+74)//2,H),
-              'bottom':((W-74)//2,0,(W+74)//2,tab)}[dock_edge]
+              'right':(0,(H-74)//2,tab,(H+74)//2)}[dock_edge]
     left, top, right, bottom = bounds
     canvas.coords(tab_id, *bounds)
     canvas.coords(tab_avatar, (left+right)/2, (top+bottom)/2)
@@ -176,7 +189,29 @@ def toggle_dock():
     global dock_enabled, dock_edge
     unfold(); dock_enabled = not dock_enabled
     if not dock_enabled: dock_edge = None
-    say('边缘吸附已开启' if dock_enabled else '边缘吸附已关闭')
+    say('左右吸附已开启' if dock_enabled else '左右吸附已关闭')
+    save_window()
+
+
+def save_window():
+    x, y = dock_position if dock_edge and dock_position else (root.winfo_x(), root.winfo_y())
+    save_preferences(a.preferences, dict(size=size, configuredSize=configured_size, left=x, top=y,
+                                       mute=mute, dockEnabled=dock_enabled, notifyOnDone=notify_on_done))
+
+
+def toggle_mute():
+    global mute
+    mute = not mute
+    canvas.itemconfigure(text_id, text='')
+    if not mute: say('我回来啦～')
+    save_window()
+
+
+def toggle_notify():
+    global notify_on_done
+    notify_on_done = not notify_on_done
+    say('完成时会展开提醒～' if notify_on_done else '完成时保持探头待机～')
+    save_window()
 
 def say(msg, sec=3):
     global bubble_end
@@ -187,8 +222,14 @@ def say(msg, sec=3):
 def react():
     global reaction_start, reaction_name
     if reaction_start is not None: return
-    pose = manifest['clips'][last_frame[0]]['frames'][last_frame[1]].split('/')[0] if last_frame else 'idle'
-    if pose in ('work_start','done','sit_down','lie_down','rice_scoop','rice_hug','rice_full'):
+    intro=manifest['clips'].get('work_start',{})
+    if state=='done' or (state in ('working','tool','editing') and work.started is not None and
+            animation_now()*1000-work.started < sum(intro.get('durations',[]))):
+        say(random.choice(phrases))
+        return
+    clip=manifest['clips'][last_frame[0]] if last_frame else None
+    pose=(clip.get('sources',clip['frames'])[last_frame[1]].split('/')[-2]) if clip else 'idle'
+    if (last_frame and last_frame[0] in ('work_start','done')) or pose in ('work_start','done','sit_down','lie_down','rice_scoop','rice_hug','rice_full'):
         say(random.choice(phrases))
         return
     reactions = manifest.get('reactions',{})
@@ -207,7 +248,16 @@ def shift_background(shift):
     work.next_at += shift
     if work.accent is not None: work.accent += shift
 
-def close(_=None): root.destroy()
+def cancel_reaction():
+    global reaction_start
+    if reaction_start is not None:
+        elapsed = (animation_now()-reaction_start)*1000
+        shift_background(max(0,min(sum(manifest['clips'][reaction_name]['durations']),elapsed)))
+        reaction_start = None
+
+def close(_=None):
+    save_window()
+    root.destroy()
 def click(e):
     global drag, motion_job
     unfold()
@@ -242,6 +292,7 @@ def release(e):
             smooth_to(*dock_position); schedule_hide()
     drag = None
     canvas.grab_release()
+    if moved: save_window()
     animate()
 
 def cancel_drag(_=None):
@@ -265,7 +316,9 @@ def menu_closed(_):
     schedule_hide()
 popup.bind('<Unmap>',menu_closed)
 popup.add_command(label='🐋 摸摸鲸鱼娘', command=react)
-popup.add_command(label='边缘吸附与收起：开启 / 关闭', command=toggle_dock)
+popup.add_command(label='左右吸附与收起：开启 / 关闭', command=toggle_dock)
+popup.add_command(label='静音 / 恢复气泡', command=toggle_mute)
+popup.add_command(label='完成时自动展开：开启 / 关闭', command=toggle_notify)
 popup.add_command(label='退出桌宠（可在 Kiro 中重开）', command=close)
 canvas.bind('<ButtonPress-1>', click)
 canvas.bind('<B1-Motion>', move)
@@ -283,7 +336,7 @@ def parent_alive(pid):
     except PermissionError: return True
 
 def monitor():
-    global state, last_state, clip_start, reaction_start, activity_detail
+    global state, last_state, last_transition, clip_start, reaction_start, activity_detail
     if not parent_alive(a.parent): close(); return
     try:
         with open(a.state, encoding='utf-8') as f:
@@ -291,19 +344,22 @@ def monitor():
         current = (payload.get('state', 'idle'), payload.get('at'), payload.get('detail'), payload.get('reply'), payload.get('replyUntil'))
         if current != last_state:
             last_state = current
-            reaction_start = None
             next_state = current[0] if current[0] in manifest['clips'] else 'idle'
-            restart = payload.get('phase')=='start'
-            if next_state != state or next_state == 'done' or restart:
-                work.set_state(state,next_state,animation_now()*1000,restart)
-                state = next_state
-                clip_start = animation_now()
-                reaction_start = None
-                idle.reset(animation_now()*1000)
+            transition = (next_state, payload.get('at'), payload.get('session'))
+            changed = transition != last_transition
+            if changed:
+                last_transition = transition
+                cancel_reaction()
+                restart = payload.get('phase')=='start'
+                if next_state != state or next_state == 'done' or restart:
+                    work.set_state(state,next_state,animation_now()*1000,restart)
+                    state = next_state
+                    clip_start = animation_now()
+                    idle.reset(animation_now()*1000)
             activity_detail = str(payload.get('detail') or '')[:160]
             msg = {'working':'Kiro 正在处理…', 'tool':'Kiro 正在调用工具…',
                    'editing':'Kiro 更新了文件～', 'done':'任务完成啦！', 'idle':'休息一会儿～', 'sleep':'呼噜呼噜～'}.get(state)
-            if state == 'done' and folded:
+            if changed and state == 'done' and folded and notify_on_done:
                 unfold()
                 if dock_edge: root.after(9000, schedule_hide)
             if msg and not folded: say(activity_detail or msg, 5 if state == 'done' else 2)
@@ -326,7 +382,7 @@ def animate():
     now = animation_now()
     if folded:
         update_peek(wall)
-        animation_job = root.after(100, animate)
+        animation_job = root.after(math.ceil(peek_delay((wall-folded_at)*1000, state)), animate)
         return
     if reaction_start is not None and (now - reaction_start) * 1000 >= sum(manifest['clips'][reaction_name]['durations']):
         shift = sum(manifest['clips'][reaction_name]['durations'])

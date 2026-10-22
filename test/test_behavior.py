@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
-from animation_runtime import IdleDirector, WorkDirector, DragDirector, frame_delay
+from animation_runtime import IdleDirector, WorkDirector, DragDirector, frame_delay, frame_at
 from dock_runtime import snap, hidden_position, ease_out, TAB_EXPOSURE
 from status_signal import activity, merge_activity
 
@@ -31,8 +31,8 @@ class BehaviorTest(unittest.TestCase):
         work.set_state('idle','working',0)
         before=work.sample('working',2000)
         drag.begin(2000)
-        self.assertEqual(drag.sample(2160),('drag',1))
-        self.assertEqual(drag.sample(2160+sum(manifest['clips']['drag']['durations'])),('drag',1))
+        self.assertEqual(drag.sample(2160),('drag',frame_at(manifest['clips']['drag'],160)))
+        self.assertEqual(drag.sample(2160+sum(manifest['clips']['drag']['durations'])),('drag',frame_at(manifest['clips']['drag'],160)))
         self.assertEqual(work.sample('working',drag.timeline(30000)),before)
         drag.end(30000)
         self.assertIsNone(drag.sample(30000))
@@ -74,22 +74,62 @@ class BehaviorTest(unittest.TestCase):
         director.reset(100000)
         self.assertEqual(director.sample(121999),('idle',0))
 
-    def test_docking_corners_and_negative_monitor_coordinates(self):
+    def test_rapid_events_keep_typing_phase_and_tools_suspend_the_typing_loop(self):
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        work=WorkDirector(manifest,random.Random(2))
+        work.set_state('idle','working',0)
+        total=lambda name: sum(manifest['clips'][name]['durations'])
+        now=total('work_start')+.63*total('working')
+        work.set_state('working','editing',now)
+        self.assertAlmostEqual((now-work.loop_started)/total('editing'),.63)
+        now+=120
+        phase=(now-work.loop_started)/total('editing')
+        work.set_state('editing','tool',now)
+        now+=700
+        work.set_state('tool','working',now)
+        self.assertAlmostEqual((now-work.loop_started)/total('working'),phase)
+        previous='working'
+        for index in range(30):
+            current='editing' if index%2==0 else 'working'
+            work.set_state(previous,current,now)
+            self.assertAlmostEqual((now-work.loop_started)/total(current),phase)
+            previous=current
+
+    def test_work_break_retains_the_background_pose(self):
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        work=WorkDirector(manifest,random.Random(2))
+        work.set_state('idle','working',0)
+        now=work.next_at
+        elapsed=now-work.loop_started
+        self.assertEqual(work.sample('working',now)[0],'work_pause')
+        now+=sum(manifest['clips']['work_pause']['durations'])
+        self.assertEqual(work.sample('working',now),('working',frame_at(manifest['clips']['working'],elapsed)))
+
+    def test_side_docking_preserves_vertical_position_near_corners(self):
         area = (-1920,-100,0,980)
-        self.assertEqual(snap(-1910,-90,232,266,area),('left',-1920,-100))
+        self.assertEqual(snap(-1910,-90,232,266,area),('left',-1920,-90))
+        self.assertEqual(snap(-242,704,232,266,area),('right',-232,704))
         self.assertIsNone(snap(-900,300,232,266,area))
+        self.assertIsNone(snap(-900,-90,232,266,area))
+        self.assertIsNone(snap(-900,704,232,266,area))
+        self.assertEqual(snap(-1910,-150,232,266,area),('left',-1920,-100))
+        self.assertEqual(snap(-242,800,232,266,area),('right',-232,714))
+        # Corners select a side without moving the height where released.
+        self.assertEqual(snap(-1900,-99,232,266,area),('left',-1920,-99))
+        self.assertEqual(snap(-252,713,232,266,area),('right',-232,713))
+
+    def test_only_sides_can_fold_and_expose_the_clickable_face_strip(self):
+        area = (-1920,-100,0,980)
         self.assertEqual(hidden_position('left',-1920,50,232,266,area),(-2096,50))
         self.assertEqual(hidden_position('right',-232,50,232,266,area),(-56,50))
-        self.assertEqual(hidden_position('top',-500,-100,232,266,area),(-500,-310))
-        self.assertEqual(hidden_position('bottom',-500,714,232,266,area),(-500,924))
+        self.assertEqual(hidden_position('top',-500,-100,232,266,area),(-500,-100))
+        self.assertEqual(hidden_position('bottom',-500,714,232,266,area),(-500,714))
         self.assertEqual(TAB_EXPOSURE, 56)
-        # Every edge exposes the exact same clickable face strip.
-        for edge in ('left', 'right', 'top', 'bottom'):
+        for edge in ('left', 'right'):
             result = hidden_position(edge, -1920, 0, 232, 266, area)
             if edge == 'left': self.assertEqual(result[0]+232, -1920+TAB_EXPOSURE)
-            elif edge == 'right': self.assertEqual(result[0], 0-TAB_EXPOSURE)
-            elif edge == 'top': self.assertEqual(result[1]+266, -100+TAB_EXPOSURE)
-            else: self.assertEqual(result[1], 980-TAB_EXPOSURE)
+            else: self.assertEqual(result[0], 0-TAB_EXPOSURE)
+            self.assertEqual(result[1], 0)
         self.assertEqual(ease_out(0),0); self.assertEqual(ease_out(1),1)
         self.assertGreater(ease_out(.5),.5)
 

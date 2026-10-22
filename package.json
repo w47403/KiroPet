@@ -1,10 +1,16 @@
 {
   "name": "kiro-whale-pet",
   "displayName": "KiroPet · 鲸鱼娘 AI 桌宠",
-  "description": "鲸鱼娘 AI 桌宠：安静待机与多姿势逐帧动画、实时工作提示、平滑边缘吸附收起。",
-  "version": "0.9.0",
+  "description": "鲸鱼娘 AI 桌宠：小小只默认尺寸、多姿势逐帧动画、实时工作提示、平滑左右吸附收起。",
+  "version": "0.11.0",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "verify": "node scripts/verify.js",
+    "test:browser": "node test/browser-animation-check.js",
+    "test:timing": "node test/animation-conformance.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   },
   "publisher": "local-whale-pet",
   "license": "MIT",
@@ -107,10 +113,10 @@
         },
         "kiroWhalePet.size": {
           "type": "number",
-          "default": 190,
+          "default": 140,
           "minimum": 100,
           "maximum": 320,
-          "description": "桌面悬浮窗图片宽度（像素）。修改后重新打开生效。"
+          "description": "桌宠显示框尺寸（像素）。修改后重新打开生效，并优先于已保存的右键菜单尺寸。"
         },
         "kiroWhalePet.autoInstallHooksNewProjects": {
           "type": "boolean",

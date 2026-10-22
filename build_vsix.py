@@ -5,6 +5,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from xml.sax.saxutils import escape
 import json
 import sys
+import subprocess
 
 ROOT = Path(__file__).resolve().parent
 # Keep local packages consistent with CI: raw source drawings have desk drift.
@@ -12,10 +13,12 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 from stabilize_work_frames import stabilize_frames
 from lock_work_desk import lock_desks
 from optimize_animation_assets import optimize
+from smooth_animation_assets import smooth
 
 stabilize_frames()
 lock_desks()
 optimize()
+smooth()
 p = json.loads((ROOT / 'package.json').read_text(encoding='utf8'))
 out = ROOT.parent / f"{p['name']}-{p['version']}.vsix"
 manifest = f'''<?xml version="1.0" encoding="utf-8"?>
@@ -58,13 +61,26 @@ content_types = '''<?xml version="1.0" encoding="utf-8"?>
 '''
 files = ['package.json', 'src/extension.js', 'src/animation-player.js', 'src/event-health.js', 'src/session-monitor.js', 'scripts/WhalePet.ps1', 'scripts/WhalePet.py', 'scripts/animation_runtime.py', 'scripts/HookSignal.ps1', 'scripts/HookSignal.sh', 'assets/whale-girl.png', 'assets/icon.png', 'README.md', 'LICENSE']
 files += [f'assets/moods/{name}.png' for name in ('idle','happy','hug','sleep','done')]
-files += ['scripts/status_signal.py', 'scripts/dock_runtime.py']
-files += [str(file.relative_to(ROOT)).replace('\\', '/') for file in (ROOT / 'assets' / 'animations').rglob('*')
-          if file.is_file() and 'source' not in file.relative_to(ROOT / 'assets' / 'animations').parts
-          and file.suffix in ('.json', '.png')]
+files += ['src/activity-store.js', 'scripts/status_signal.py', 'scripts/dock_runtime.py',
+          'scripts/preferences.py', 'scripts/PetPreferences.ps1', 'scripts/animation_timing.ps1', 'CHANGELOG.md']
+files += [file.relative_to(ROOT).as_posix() for file in sorted((ROOT / 'docs').glob('*.md'))]
+animation = json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))
+files.append('assets/animations/manifest.json')
+files += ['assets/animations/'+prefix+frame
+          for frame in sorted({frame for clip in animation['clips'].values() for frame in clip['frames']})
+          for prefix in ('', 'tk/140/', 'tk/190/')]
 with ZipFile(out, 'w', ZIP_DEFLATED, compresslevel=7) as z:
     z.writestr('extension.vsixmanifest', manifest)
     z.writestr('[Content_Types].xml', content_types)
+    def git_output(*args):
+        try:
+            result = subprocess.run(['git', '-c', f'safe.directory={ROOT.as_posix()}', *args], cwd=ROOT, capture_output=True, text=True)
+            return result.stdout.strip() if result.returncode == 0 else None
+        except OSError:
+            return None
+    status = git_output('status', '--porcelain')
+    z.writestr('extension/build-info.json', json.dumps({'version': p['version'], 'commit': git_output('rev-parse', 'HEAD'),
+                                                    'dirty': None if status is None else bool(status)}, indent=2))
     for rel in files:
         target = 'extension/' + rel
         if rel.endswith('.ps1'):

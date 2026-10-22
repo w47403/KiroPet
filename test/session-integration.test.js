@@ -28,13 +28,14 @@ test('extension persists local events for desktop, resists Hook overwrite and cl
     window: {createStatusBarItem: () => ({show() {}, dispose() {}}), showWarningMessage: msg => assert.fail(msg)}
   };
   class FakeMonitor {
-    constructor(config) { this.config = config; monitors.push(this); }
+    constructor(config) { this.config = config; this.root = config.root; monitors.push(this); }
     start() { return this; }
+    update(config) { Object.assign(this.config, config); }
     dispose() { this.disposed = true; }
   }
   const sandbox = {module: {exports: {}}, console, process, setInterval: () => 1, clearInterval() {},
     require: name => name === 'vscode' ? vscode : name === './session-monitor' ? {SessionMonitor: FakeMonitor} : name.startsWith('./') ? require(path.join(root, 'src', name)) : require(name)};
-  vm.runInNewContext(fs.readFileSync(path.join(root, 'src/extension.js'), 'utf8') + '\nmodule.exports.refresh=refresh;', sandbox);
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'src/extension.js'), 'utf8') + '\nmodule.exports.refresh=refresh;module.exports.stateFile=localStateFile;', sandbox);
   t.after(() => { sandbox.module.exports.deactivate(); subscriptions.forEach(s => s.dispose()); fs.rmSync(dir, {recursive: true, force: true}); });
   sandbox.module.exports.activate({globalStorageUri: {fsPath: dir}, extensionPath: root, subscriptions});
   assert(commands.has('kiroWhalePet.checkSessions'));
@@ -43,7 +44,7 @@ test('extension persists local events for desktop, resists Hook overwrite and cl
   assert.equal(fs.readdirSync(path.join(project, '.kiro', 'whale-pet-backups')).length, 1);
   const activity = {state: 'tool', at: Date.now(), startedAt: Date.now() - 5000, eventCount: 4, source: 'session', event: 'tool_call', detail: 'read_file'};
   monitors[0].config.onActivity(activity);
-  const stateFile = path.join(dir, 'activity.json');
+  const stateFile = sandbox.module.exports.stateFile();
   assert.deepEqual(JSON.parse(fs.readFileSync(stateFile)), activity);
   fs.writeFileSync(stateFile, JSON.stringify({state: 'done', at: Date.now(), event: 'AgentStop'}));
   sandbox.module.exports.refresh();
@@ -51,11 +52,11 @@ test('extension persists local events for desktop, resists Hook overwrite and cl
   assert.equal(JSON.parse(fs.readFileSync(stateFile)).state, 'tool');
   options['localSessions.showReplyPreview'] = true;
   configurationChanged({affectsConfiguration: () => true});
-  assert.equal(monitors[0].disposed, true);
-  assert.equal(monitors[1].config.showReply, true);
-  assert.equal(JSON.parse(fs.readFileSync(stateFile)).state, 'idle');
+  assert.equal(monitors[0].disposed, undefined);
+  assert.equal(monitors[0].config.showReply, true);
+  assert.equal(JSON.parse(fs.readFileSync(stateFile)).state, 'tool');
   options['localSessions.enabled'] = false;
   configurationChanged({affectsConfiguration: () => true});
-  assert.equal(monitors[1].disposed, true);
-  assert.equal(monitors.length, 2);
+  assert.equal(monitors[0].disposed, true);
+  assert.equal(monitors.length, 1);
 });

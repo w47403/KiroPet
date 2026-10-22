@@ -38,6 +38,12 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.evaluate(()=>player.sample().name),'work_pet');
     await page.evaluate(()=>{window.testNow+=manifest.clips.work_pet.durations.reduce((a,b)=>a+b,0);animate();});
     assert.equal(await page.evaluate(()=>player.sample().path),before);
+    await page.evaluate(()=>{player.react();window.testNow+=600;player.setState('working');animate();});
+    assert.equal(await page.evaluate(()=>player.sample().path),before,'an event during a pat must preserve the background pose');
+    await page.evaluate(()=>{player.setState('editing');animate();});
+    const editingPhase=await page.evaluate(()=>(window.testNow-player.loopStarted)/manifest.clips.editing.durations.reduce((a,b)=>a+b,0));
+    await page.evaluate(()=>{player.setState('tool');window.testNow+=700;player.setState('working');animate();});
+    assert.ok(Math.abs(await page.evaluate(()=>(window.testNow-player.loopStarted)/manifest.clips.working.durations.reduce((a,b)=>a+b,0))-editingPhase)<1e-9);
     await page.evaluate(()=>{player.setState('idle');window.testNow+=22000;player.random=()=>0;animate();});
     await page.evaluate(()=>{window.testNow+=2000;animate();});
     await page.screenshot({path:path.join(output,'sitting-panel.png')});
@@ -47,6 +53,14 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.evaluate(()=>player.sample().name),'land');
     await page.emulateMedia({reducedMotion:'reduce'});
     assert.equal(await page.evaluate(()=>player.sample(true).index),0);
+    assert.equal(await page.evaluate(()=>{
+      const activity={state:'done',at:1234,phase:'finish',reply:'answer',replyUntil:Date.now()+8000};
+      window.dispatchEvent(new MessageEvent('message',{data:{type:'activity',activity}}));
+      const started=player.started;
+      window.testNow+=500;
+      window.dispatchEvent(new MessageEvent('message',{data:{type:'activity',activity:{...activity,reply:'',replyUntil:0}}}));
+      return player.started===started;
+    }),true,'preview changes must not replay completion');
     assert.deepEqual(errors,[]);
     const preview=path.resolve(root,'../output/animation-review-v090.html');
     if(fs.existsSync(preview)){

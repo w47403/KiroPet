@@ -2,6 +2,16 @@
 import random
 
 
+def peek_delay(elapsed_ms, state):
+    if elapsed_ms < 340:
+        return max(16, 340-elapsed_ms)
+    if state == 'sleep':
+        return 60000
+    phase = elapsed_ms % 7200
+    boundary = 5000 if phase < 5000 else 5230 if phase < 5230 else 12200
+    return max(16, boundary-phase)
+
+
 def frame_delay(clip, elapsed_ms):
     remaining = max(0, elapsed_ms)
     total = sum(clip['durations'])
@@ -84,12 +94,30 @@ class WorkDirector:
         self.accent = None
         self.next_at = float('inf')
         self.loop_started = 0
+        self.typing_phase = 0
+        self.tool_phase = 0
 
     def set_state(self, previous, current, now_ms, restart=False):
         active = ('working','tool','editing')
-        if previous != current or restart: self.loop_started = now_ms
+        intro_length = sum(self.manifest['clips'].get('work_start',{}).get('durations',[]))
+        if previous == current and not restart:
+            return
+        if (previous in active and current in active and not restart and
+                self.started is not None and now_ms >= self.started+intro_length):
+            if self.accent is not None:
+                self.loop_started += min(now_ms-self.accent,
+                    sum(self.manifest['clips']['work_pause']['durations']))
+                self.accent = None
+            old_length = sum(self.manifest['clips'][previous]['durations'])
+            phase = max(0,now_ms-self.loop_started) % old_length / old_length
+            if previous == 'tool': self.tool_phase = phase
+            else: self.typing_phase = phase
+            self.loop_started = now_ms-(self.tool_phase if current == 'tool' else self.typing_phase)*sum(
+                self.manifest['clips'][current]['durations'])
         if current in active and (previous not in active or restart):
             self.started = now_ms
+            self.loop_started = now_ms+intro_length
+            self.typing_phase = self.tool_phase = 0
             self.accent = None
             self.next_at = now_ms + sum(self.manifest['clips'].get('work_start',{}).get('durations',[])) + 18000
         elif current not in active:
@@ -102,6 +130,7 @@ class WorkDirector:
         if intro and now_ms-self.started < total:
             return 'work_start', timed_frame(self, intro,now_ms-self.started)
         if self.accent and now_ms-self.accent >= sum(self.manifest['clips']['work_pause']['durations']):
+            self.loop_started += sum(self.manifest['clips']['work_pause']['durations'])
             self.accent = None
         if state!='tool' and self.accent is None and now_ms>=self.next_at and 'work_pause' in self.manifest['clips']:
             self.accent = now_ms
@@ -110,8 +139,7 @@ class WorkDirector:
         clip = self.manifest['clips'][name]
         if self.accent is not None and state!='tool':
             return name, timed_frame(self, dict(clip,loop=False),now_ms-self.accent)
-        index = timed_frame(self, clip,
-                            now_ms-max(self.loop_started,self.started+total))
+        index = timed_frame(self, clip,now_ms-self.loop_started)
         if state != 'tool':
             self.next_delay = max(16, min(self.next_delay, self.next_at-now_ms))
         return name, index

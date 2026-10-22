@@ -28,10 +28,33 @@ class AnimationAssetsTest(unittest.TestCase):
     def test_idle_scenes_have_explicit_entry_exit_and_shared_standing_pose(self):
         for name in ('sit','nap','stretch','rice_full'):
             clip=MANIFEST['clips'][name]
-            self.assertEqual(clip['frames'][0],'sit_down/00.png')
-            self.assertEqual(clip['frames'][-1],'idle/00.png')
+            self.assertEqual(clip['sources'][0],'sit_down/00.png')
+            self.assertEqual(clip['sources'][-1],'idle/00.png')
             self.assertFalse(clip['loop'])
-        self.assertIn('lie_down/07.png',MANIFEST['clips']['nap']['frames'])
+        self.assertIn('lie_down/07.png',MANIFEST['clips']['nap']['sources'])
+
+    def test_all_actions_are_motion_compensated_with_exact_timing(self):
+        self.assertEqual(MANIFEST['smoothing']['motionStepMs'],40)
+        for name, clip in MANIFEST['clips'].items():
+            self.assertEqual(len(clip['frames']),len(clip['sources']))
+            self.assertTrue(any(p.startswith('tween/') for p in clip['frames']),name)
+            for path, duration in zip(clip['frames'],clip['durations']):
+                self.assertGreater(duration,0)
+                if path.startswith('tween/'):
+                    self.assertLessEqual(duration,40)
+            if name in ('working','editing'):
+                self.assertFalse(any(p.startswith('work_bridge/') for p in clip['sources']))
+        base=json.loads((ROOT/'scripts/animation-base.json').read_text(encoding='utf-8'))
+        self.assertEqual(sum(MANIFEST['clips']['sleep']['durations']),sum(base['clips']['sleep']['durations']))
+
+    def test_settled_desk_stays_pixel_exact_after_interpolation(self):
+        folder=ROOT/'assets/animations'
+        reference=Image.open(folder/'registered/working/00.png').convert('RGBA')
+        mask=table_mask(*desk_anchor(reference))
+        for name in ('working','editing','tool','work_pause','work_pet'):
+            for path in MANIFEST['clips'][name]['frames']:
+                with Image.open(folder/path) as image:
+                    self.assertEqual(Image.composite(reference,image,mask).tobytes(),image.tobytes(),path)
 
     def test_rgba_frames_are_complete_and_distinct(self):
         for name, clip in MANIFEST['clips'].items():
@@ -67,11 +90,19 @@ class AnimationAssetsTest(unittest.TestCase):
                 for relative in clip['frames']:
                     self.assertIn('extension/assets/animations/' + relative, names)
                     self.assertIn('extension/assets/animations/tk/190/' + relative, names)
+                    self.assertIn('extension/assets/animations/tk/140/' + relative, names)
+            for relative in {frame for clip in MANIFEST['clips'].values() for frame in clip['frames']}:
+                with Image.open(ROOT/'assets/animations/tk/140'/relative) as image:
+                    self.assertEqual(image.size, (105, 140))
             self.assertIn('extension/src/animation-player.js', names)
             self.assertIn('extension/scripts/animation_runtime.py', names)
             self.assertIn('extension/assets/animations/manifest.json', names)
+            for relative in ('src/activity-store.js', 'scripts/preferences.py', 'scripts/PetPreferences.ps1', 'scripts/animation_timing.ps1'):
+                self.assertIn('extension/' + relative, names)
+            info = json.loads(archive.read('extension/build-info.json'))
+            self.assertEqual(info['version'], package['version'])
             self.assertFalse(any('/source/' in name for name in names))
-            for name in ('WhalePet.ps1', 'HookSignal.ps1'):
+            for name in ('WhalePet.ps1', 'HookSignal.ps1', 'PetPreferences.ps1', 'animation_timing.ps1'):
                 self.assertTrue(archive.read('extension/scripts/' + name).startswith(b'\xef\xbb\xbf'))
 
 

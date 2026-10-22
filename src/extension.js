@@ -8,12 +8,14 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const {eventProgress, isManagedHook, inspectHooks, disableOwnedHook} = require('./event-health');
 const {SessionMonitor} = require('./session-monitor');
+const {ActivityStore} = require('./activity-store');
 
 let extContext;
 let child = null;
 let statusItem = null;
 let panel = null;
-let activityPath = null;
+let activityStore = null;
+let lastHookSignature;
 let refreshTimer = null;
 let lastDesktopError = '';
 let sessionMonitor = null;
@@ -23,7 +25,7 @@ const STATES = new Set(['idle', 'working', 'tool', 'editing', 'done', 'sleep']);
 const EMOJI = {idle: '$(smiley)', working: '$(sync~spin)', tool: '$(tools)', editing: '$(edit)', done: '$(check)', sleep: '$(moon)'};
 
 function dataDir() { return extContext.globalStorageUri.fsPath; }
-function localStateFile() { return path.join(dataDir(), 'activity.json'); }
+function localStateFile() { return activityStore.stateFile; }
 function assetsDir() { return path.join(extContext.extensionPath, 'assets'); }
 function settings() { return vscode.workspace.getConfiguration('kiroWhalePet'); }
 function writableFiles() {
@@ -54,14 +56,21 @@ function writeActivity(state, project = '', detail = '', phase = '') {
   const dir = dataDir();
   try {
     fs.mkdirSync(dir, {recursive: true});
-    const tmp = path.join(dir, `activity.${process.pid}.tmp`);
-    fs.writeFileSync(tmp, JSON.stringify({state, project, phase, detail: String(detail).slice(0,160),
-      at: Date.now(), startedAt: Date.now(), eventCount: 0, event: 'Manual'}), 'utf8');
-    fs.renameSync(tmp, localStateFile());
+    activityStore.write({state, project, phase, detail: String(detail).slice(0,160),
+      at: Date.now(), startedAt: Date.now(), eventCount: 0, event: 'Manual'});
     refresh();
   } catch (err) { vscode.window.showWarningMessage('鲸鱼娘状态写入失败：' + err.message); }
 }
 function refresh() {
+  if (activityStore && !settings().get('localSessions.enabled', true)) {
+    const hooks = activityStore.readHooks();
+    const signature = JSON.stringify(hooks);
+    if (signature !== lastHookSignature) {
+      lastHookSignature = signature;
+      if (hooks) persistSessionActivity(hooks);
+      else if (readActivity().source === 'hook') activityStore.write({state: 'idle', at: Date.now(), event: 'Manual'});
+    }
+  }
   let activity = readActivity();
   // Once a live local session is observed, legacy Hooks must not overwrite it.
   if (sessionActivity && activity.source === 'hook') {
@@ -78,27 +87,42 @@ function refresh() {
 }
 function persistSessionActivity(activity) {
   try {
-    const tmp = path.join(dataDir(), `session.${process.pid}.tmp`);
-    fs.writeFileSync(tmp, JSON.stringify(activity), 'utf8');
-    fs.renameSync(tmp, localStateFile());
+    activityStore.write(activity);
   } catch (err) { console.warn('KiroPet session state write failed:', err.code); }
 }
 function startSessionMonitor() {
+  const config = settings();
+  const configured = config.get('localSessions.directory', '').trim();
+  const root = path.resolve(configured || path.join(os.homedir(), '.kiro', 'sessions'));
+  const workspaces = getProjectFolders().map(folder => folder.uri.fsPath);
+  activityStore.updateWorkspaces(workspaces);
+  const showReply = config.get('localSessions.showReplyPreview', true);
+  const enabled = config.get('localSessions.enabled', true);
+  if (enabled && sessionMonitor && path.resolve(sessionMonitor.root) === root) {
+    sessionMonitor.update({workspaces, showReply});
+    // Newly added projects may still have an old, owned Hook to migrate.
+    for (const folder of getProjectFolders()) {
+      try { disableOwnedHook(hookPath(folder)); }
+      catch (err) { console.warn('KiroPet Hook migration failed:', err.message); }
+    }
+    return;
+  }
   if (sessionMonitor) sessionMonitor.dispose();
   sessionMonitor = null;
   sessionActivity = null;
   if (readActivity().source === 'session') writeActivity('idle', '', '等待新的 Kiro 会话记录');
-  if (!settings().get('localSessions.enabled', true)) return;
+  if (!enabled) return;
   for (const folder of getProjectFolders()) {
     try { disableOwnedHook(hookPath(folder)); }
     catch (err) { console.warn('KiroPet Hook migration failed:', err.message); }
   }
-  const configured = settings().get('localSessions.directory', '').trim();
   sessionMonitor = new SessionMonitor({
-    root: configured || path.join(os.homedir(), '.kiro', 'sessions'),
-    workspaces: getProjectFolders().map(folder => folder.uri.fsPath),
-    showReply: settings().get('localSessions.showReplyPreview', true),
-    onActivity: activity => { sessionActivity = activity; persistSessionActivity(activity); refresh(); }
+    root, workspaces, showReply,
+    onActivity: activity => {
+      sessionActivity = activity;
+      if (activity) { persistSessionActivity(activity); refresh(); }
+      else writeActivity('idle', '', '等待当前项目的新会话记录');
+    }
   }).start();
 }
 async function checkSessions() {
@@ -157,18 +181,20 @@ function startDesktop(forceDesktop = false) {
   if (isRunning()) { vscode.window.showInformationMessage('鲸鱼娘已经在桌面上啦～'); return; }
   // Reopening a companion must retain the AI's current work event.
   lastDesktopError = '';
-  const size = Math.max(100, Math.min(320, Number(settings().get('size', 190)) || 190));
+  const size = Math.max(100, Math.min(320, Number(settings().get('size', 140)) || 140));
   const image = path.join(assetsDir(), 'whale-girl.png');
   const state = localStateFile();
+  const preferences = activityStore.preferencesFile(getProjectFolders().map(folder => folder.uri.fsPath));
   if (process.platform === 'win32') {
     const args = ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-STA',
       '-File', path.join(extContext.extensionPath, 'scripts', 'WhalePet.ps1'),
       '-AssetPath', image, '-StatePath', state, '-InitialSize', String(size),
+      '-PreferencesPath', preferences,
       '-ParentProcessId', String(process.pid)];
     spawnPet('powershell.exe', args, (err) => showErrorAndPanel(err));
   } else {
     const args = [path.join(extContext.extensionPath, 'scripts', 'WhalePet.py'),
-      '--image', image, '--state', state, '--size', String(size), '--parent', String(process.pid)];
+      '--image', image, '--state', state, '--size', String(size), '--preferences', preferences, '--parent', String(process.pid)];
     spawnPet('python3', args, (err) => {
       // A missing Python/Tk falls back to a fully self-contained Kiro Webview.
       spawnPet('python', args, (err2) => showErrorAndPanel(`${err}; ${err2}`));
@@ -183,16 +209,16 @@ function psQuote(s) { return '"' + String(s).replace(/"/g, '`"') + '"'; }
 function safeProjectLabel(name) {
   return String(name).replace(/[^\p{L}\p{N}_-]/gu, '_').slice(0, 45);
 }
-function hookCommand(state, projectName, phase = 'continue') {
+function hookCommand(state, projectName, phase = 'continue', workspace) {
   const project = safeProjectLabel(projectName);
-  const stateFile = localStateFile();
+  const stateFile = activityStore.hookFile(workspace);
   if (process.platform === 'win32') {
     return `powershell.exe -NoLogo -NoProfile -NonInteractive -File ${psQuote(path.join(dataDir(), 'HookSignal.ps1'))} -StatePath ${psQuote(stateFile)} -State ${state} -Project ${psQuote(project)} -Phase ${phase}`;
   }
   return `/bin/sh ${shellQuote(path.join(dataDir(), 'HookSignal.sh'))} ${shellQuote(stateFile)} ${shellQuote(state)} ${shellQuote(project)} ${shellQuote(phase)}`;
 }
 function hookPath(folder) { return path.join(folder.uri.fsPath, '.kiro', 'hooks', 'whale-pet.json'); }
-function buildHooks(projectName) {
+function buildHooks(projectName, workspace) {
   const pairs = [
     ['开始工作', 'PromptSubmit', 'working'],
     ['准备使用工具', 'PreToolUse', 'tool'],
@@ -202,7 +228,7 @@ function buildHooks(projectName) {
   ];
   return {version:'v1', hooks:pairs.map(([label, trigger, state]) => ({
     name: `Whale Pet - ${label}`, trigger, timeout: 5,
-    action: {type:'command', command:hookCommand(state, projectName, trigger==='PromptSubmit'?'start':trigger==='AgentStop'?'finish':'continue')}
+    action: {type:'command', command:hookCommand(state, projectName, trigger==='PromptSubmit'?'start':trigger==='AgentStop'?'finish':'continue', workspace)}
   }))};
 }
 function recognizedHook(data) { return isManagedHook(data); }
@@ -229,7 +255,7 @@ async function installForFolders(folders, silent = false) {
             /HookSignal\.(ps1|sh)/.test(h.action.command || ''))) { skipped++; continue; }
         fs.copyFileSync(target, target + '.bak');
       }
-      fs.writeFileSync(target, JSON.stringify(buildHooks(folder.name), null, 2) + '\n');
+      fs.writeFileSync(target, JSON.stringify(buildHooks(folder.name, folder.uri.fsPath), null, 2) + '\n');
       installed++;
     } catch (err) {
       vscode.window.showErrorMessage(`${folder.name} Hook 安装失败：${err.message}`);
@@ -248,7 +274,7 @@ function upgradeOwnedHooks() {
     try {
       const old = JSON.parse(fs.readFileSync(target, 'utf8'));
       if (!isManagedHook(old)) continue;
-      const next = buildHooks(folder.name);
+      const next = buildHooks(folder.name, folder.uri.fsPath);
       if (JSON.stringify(old.hooks) === JSON.stringify(next.hooks)) continue;
       fs.copyFileSync(target, target + '.bak');
       fs.writeFileSync(target, JSON.stringify(next, null, 2) + '\n');
@@ -320,6 +346,7 @@ function htmlFor(webview) {
   button{border:1px solid var(--vscode-button-border,transparent);border-radius:7px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:9px;cursor:pointer}
   button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}
   #activity{font-size:12px;opacity:.78;text-align:center;min-height:20px}
+  details{margin-top:16px}summary{cursor:pointer;font-size:12px;opacity:.8}
   p{font-size:11px;opacity:.72;line-height:1.5}
 </style></head><body>
 <header><span>🐋 鲸鱼娘</span><span class="tag" id="status">待机中</span></header>
@@ -328,15 +355,18 @@ function htmlFor(webview) {
 <div class="buttons">
 <button data-action="showDesktop">打开桌面悬浮窗</button>
 <button class="secondary" data-action="hideDesktop">关闭悬浮窗</button>
+<button class="secondary" data-action="openSettings">设置</button>
+<button class="secondary" data-state="sleep">休息</button>
+</div>
+<details><summary>手动演示与诊断</summary><div class="buttons">
 <button class="secondary" data-state="working">工作中</button>
 <button class="secondary" data-state="tool">调用工具</button>
 <button class="secondary" data-state="editing">修改文件</button>
 <button class="secondary" data-state="done">完成啦</button>
 <button class="secondary" data-state="idle">待机</button>
-<button class="secondary" data-state="sleep">休息</button>
 <button data-action="checkSessions">诊断本地会话监听</button>
  <button class="secondary" data-action="checkLink">诊断事件联动</button>
-</div>
+</div></details>
 <p>关闭这个面板后，随时按 Ctrl/Cmd + Shift + P，运行「鲸鱼娘：打开 Kiro 内桌宠面板」。状态来自 Agent 事件，不代表真实 token 数量或 AI 内部思考进度。</p>
 <script nonce="${nonce}">
 ${playerSource}
@@ -378,8 +408,8 @@ function draw(){if(document.hidden)return;let label={idle:'💤 待机中',worki
  if(active&&Date.now()>until){bubble.textContent=stale?'暂未收到新的 Kiro 记录 · 不代表 AI 已完成':(current.detail||label); bubble.style.display='block';}
  else if(Date.now()>until)bubble.style.display='none';}
 window.addEventListener('message',evt=>{const data=evt.data;if(!data||data.type!=='activity')return;
- let next=data.activity;const key=JSON.stringify([next.at,next.state,next.reply,next.replyUntil]);const newEvent=key!==seenAt;if(newEvent){seenAt=key;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};const reply=next.reply&&next.replyUntil>Date.now();say(reply?'回答 · '+next.reply:next.detail||map[next.state]||'嗨～',reply?Math.min(8000,next.replyUntil-Date.now()):2800)}
- current=next;if(newEvent)player.setState(next.state,next.state==='done'||next.phase==='start');animate();draw();});
+ let next=data.activity;const transition=next.at!==current.at||next.state!==current.state||next.session!==current.session;const key=JSON.stringify([next.at,next.state,next.session,next.reply,next.replyUntil]);const newEvent=key!==seenAt;if(newEvent){seenAt=key;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};const reply=next.reply&&next.replyUntil>Date.now();say(reply?'回答 · '+next.reply:next.detail||map[next.state]||'嗨～',reply?Math.min(8000,next.replyUntil-Date.now()):2800)}
+ current=next;if(transition)player.setState(next.state,next.state==='done'||next.phase==='start');animate();draw();});
 setInterval(draw,500);vscode.postMessage({type:'ready'});
 </script></body></html>`;
 }
@@ -400,18 +430,16 @@ function openPanel() {
       case 'installHooks': await installHooks(); break;
       case 'checkLink': await checkLink(); break;
       case 'checkSessions': await checkSessions(); break;
+      case 'openSettings': openSettings(); break;
       case 'setState': if (STATES.has(msg.state)) writeActivity(msg.state); break;
       default: break;
     }
   }, null, extContext.subscriptions);
   refresh();
 }
-async function openMenu() {
-  const autoStart = settings().get('autoStart', true);
+function openSettings() { return vscode.commands.executeCommand('workbench.action.openSettings', 'kiroWhalePet'); }
+async function openAdvancedMenu() {
   const choices = [
-    {label:'$(window) 显示桌面悬浮窗', fn:()=>startDesktop(true)},
-    {label:'$(preview) 打开 Kiro 内桌宠面板（所有系统）', fn:openPanel},
-    {label:'$(close) 关闭桌面悬浮窗', fn:stopDesktop},
     {label:'$(sync) 工作中', fn:()=>writeActivity('working')},
     {label:'$(check) 完成啦', fn:()=>writeActivity('done')},
     {label:'$(coffee) 待机', fn:()=>writeActivity('idle')},
@@ -422,14 +450,28 @@ async function openMenu() {
     {label:'$(eye) 诊断本地会话监听（方案 A）', fn:checkSessions},
     {label:'$(plug) 为当前项目安装 Agent 联动', fn:installHooks},
     {label:'$(files) 为所有已打开项目安装 Agent 联动', fn:installHooksAll},
-    {label:'$(trash) 移除当前项目联动', fn:removeHooks},
-    {label:`$(settings-gear) ${autoStart?'关闭':'开启'} Kiro 启动时自动显示`, fn:toggleAutoStart}
+    {label:'$(trash) 移除当前项目联动', fn:removeHooks}
+  ];
+  const chosen = await vscode.window.showQuickPick(choices, {placeHolder:'鲸鱼娘 · 手动演示与诊断'});
+  if (chosen) await chosen.fn();
+}
+async function openMenu() {
+  const autoStart = settings().get('autoStart', true);
+  const choices = [
+    {label:'$(window) 显示桌面悬浮窗', fn:()=>startDesktop(true)},
+    {label:'$(preview) 打开 Kiro 内桌宠面板', fn:openPanel},
+    {label:'$(close) 关闭桌面悬浮窗', fn:stopDesktop},
+    {label:'$(settings-gear) 设置', fn:openSettings},
+    {label:`$(play) ${autoStart?'关闭':'开启'} Kiro 启动时自动显示`, fn:toggleAutoStart},
+    {label:'$(tools) 手动演示与诊断…', fn:openAdvancedMenu}
   ];
   const chosen = await vscode.window.showQuickPick(choices, {placeHolder:'鲸鱼娘桌宠 · 选择操作'});
   if (chosen) await chosen.fn();
 }
 function activate(context) {
   extContext=context;
+  activityStore = new ActivityStore(dataDir());
+  lastHookSignature = undefined;
   try { writableFiles(); } catch (e) { vscode.window.showWarningMessage('鲸鱼娘初始化配置目录失败：'+e.message); }
   const prev = readActivity();
   if (Date.now()-prev.at>15*60*1000) writeActivity('idle');
@@ -471,5 +513,9 @@ function activate(context) {
   refresh();
   if (settings().get('autoStart',true)) startDesktop();
 }
-function deactivate() { sessionMonitor?.dispose(); stopDesktop(); if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;} }
+function deactivate() {
+  sessionMonitor?.dispose(); stopDesktop();
+  if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}
+  activityStore?.dispose();
+}
 module.exports={activate,deactivate};

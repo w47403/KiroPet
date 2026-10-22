@@ -86,8 +86,15 @@ def optimize():
     manifest['reactions']={'working':'work_pet','editing':'work_pet','tool':'work_pet','sit':'sit_pet','sit_down':'sit_pet','nap':'nap_pet','lie_down':'nap_pet','sleep':'nap_pet'}
     # Long floor scenes and food scenes are less common than small standing actions.
     manifest['idleBehavior'].update(weights={'idle':5,'walk':3,'sit':3,'nap':1,'stretch':2,'rice_scoop':1,'rice_hug':1,'rice_full':1},restMinMs=22000,restMaxMs=45000)
+    # Native Tk cannot resize to arbitrary dimensions without an image library.
+    # Ship exact-size frames for the small default, keeping runtime dependency-free.
+    for relative in sorted({frame for clip in clips.values() for frame in clip['frames']}):
+        destination = ASSETS/'tk/140'/relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(ASSETS/relative) as image:
+            image.resize((105, 140), Image.Resampling.LANCZOS).save(destination, optimize=True)
     (ASSETS/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-    print('Compiled 24 new drawings, 16-frame work loops and complete idle scenes.')
+    print('Compiled animation sequences and exact 140px Tk frames.')
 
 
 if __name__ == '__main__':

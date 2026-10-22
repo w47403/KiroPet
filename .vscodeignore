@@ -3,7 +3,11 @@
 *.vsix
 build_vsix.py
 test/**
-docs/**
 assets/animations/source/**
 assets/reference/**
 scripts/prepare_animation_assets.py
+output/**
+.github/**
+package-lock.json
+requirements-dev.txt
+scripts/verify.js
