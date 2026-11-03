@@ -64,6 +64,7 @@ class IdleDirector:
         self.reset(now_ms)
 
     def reset(self, now_ms):
+        self.rest_started = now_ms
         self.name = 'idle'
         self.started = None
         self.next_at = now_ms + self.manifest.get('idleBehavior', {}).get('initialHoldMs',22000)
@@ -80,6 +81,14 @@ class IdleDirector:
             self.next_at = now_ms + sum(self.manifest['clips'][self.name]['durations']) + self.rng.uniform(
                 behavior.get('restMinMs',18000), behavior.get('restMaxMs',45000))
         clip = dict(self.manifest['clips'][self.name], loop=False)
+        if self.manifest.get('continuousIdle'):
+            elapsed = now_ms - (self.started if self.started is not None else self.rest_started)
+            resting = self.started is None or elapsed >= sum(clip['durations'])
+            name = 'idle' if resting else self.name
+            clip = dict(self.manifest['clips'][name], loop=resting)
+            index = timed_frame(self, clip, now_ms-self.rest_started if resting else elapsed)
+            self.next_delay = max(16, min(self.next_delay, self.next_at-now_ms))
+            return name, index
         index = 0 if self.started is None else timed_frame(self, clip, now_ms-self.started)
         self.next_delay = max(16, min(250 if self.started is None else self.next_delay, self.next_at-now_ms))
         return self.name, index

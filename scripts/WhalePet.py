@@ -44,30 +44,24 @@ except tk.TclError:
 animation_dir = os.path.join(os.path.dirname(a.image), 'animations')
 with open(os.path.join(animation_dir, 'manifest.json'), encoding='utf-8') as file:
     manifest = json.load(file)
-frame_cache = {}
 image_cache = {}
 
-def frames_for(name):
-    if name not in frame_cache:
-        frames = []
-        for relative in manifest['clips'][name]['frames']:
-            if relative in image_cache:
-                frames.append(image_cache[relative])
-                continue
-            # Pre-sized PNGs keep native Tk dependency-free and avoid integer zoom artifacts.
-            filename = os.path.join(animation_dir, 'tk', str(size), relative)
-            if not os.path.isfile(filename):
-                filename = os.path.join(animation_dir, relative)
-            raw = tk.PhotoImage(file=filename)
-            factor = max(1, round(max(raw.width(), raw.height()) / size))
-            image_cache[relative] = raw.subsample(factor, factor)
-            frames.append(image_cache[relative])
-        frame_cache[name] = frames
-    return frame_cache[name]
+def frame_for(name, index):
+    relative = manifest['clips'][name]['frames'][index]
+    if relative in image_cache:
+        return image_cache[relative]
+    # Pre-sized PNGs keep native Tk dependency-free and avoid integer zoom artifacts.
+    filename = os.path.join(animation_dir, 'tk', str(size), relative)
+    if not os.path.isfile(filename):
+        filename = os.path.join(animation_dir, relative)
+    raw = tk.PhotoImage(file=filename)
+    factor = max(1, round(max(raw.width(), raw.height()) / size))
+    image_cache[relative] = raw.subsample(factor, factor)
+    while len(image_cache) > 240:
+        del image_cache[next(iter(image_cache))]
+    return image_cache[relative]
 
-photo = frames_for('idle')[0]
-for clip_name in manifest['clips']:
-    frames_for(clip_name)
+photo = frame_for('idle', 0)
 W, H = max(size, photo.width() + 18), photo.height() + 76
 screenw, screenh = root.winfo_screenwidth(), root.winfo_screenheight()
 x, y = screenw-W-32, screenh-H-95
@@ -316,6 +310,23 @@ def menu_closed(_):
     schedule_hide()
 popup.bind('<Unmap>',menu_closed)
 popup.add_command(label='🐋 摸摸鲸鱼娘', command=react)
+def preview_action(name):
+    global reaction_name, reaction_start
+    cancel_reaction()
+    reaction_name = name
+    reaction_start = animation_now()
+    say(manifest['clips'][name].get('nameZh', name))
+
+if manifest.get('catalog'):
+    actions_menu = tk.Menu(popup, tearoff=False)
+    groups = {}
+    for action in manifest['catalog']:
+        category = action['category']
+        if category not in groups:
+            groups[category] = tk.Menu(actions_menu, tearoff=False)
+            actions_menu.add_cascade(label=category, menu=groups[category])
+        groups[category].add_command(label=action['nameZh'], command=lambda name=action['id']: preview_action(name))
+    popup.add_cascade(label='全部动作（95）', menu=actions_menu)
 popup.add_command(label='左右吸附与收起：开启 / 关闭', command=toggle_dock)
 popup.add_command(label='静音 / 恢复气泡', command=toggle_mute)
 popup.add_command(label='完成时自动展开：开启 / 关闭', command=toggle_notify)
@@ -403,7 +414,7 @@ def animate():
         name,index = work.sample(state,now*1000)
         delay = work.next_delay
     if root.winfo_viewable() and (name, index) != last_frame:
-        canvas.itemconfigure(img, image=frames_for(name)[index])
+        canvas.itemconfigure(img, image=frame_for(name, index))
         last_frame = (name, index)
     if wall >= bubble_end:
         canvas.itemconfigure(text_id, text=(activity_detail or {'working':'正在处理你的请求','tool':'正在调用工具','editing':'正在更新文件'}.get(state,'')) if state in ('working','tool','editing') and not mute else '')

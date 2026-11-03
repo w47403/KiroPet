@@ -8,7 +8,13 @@ const root = path.resolve(__dirname, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'assets/animations/manifest.json')));
 const clips = manifest.clips;
 const samples = [];
+const timelines = new Set();
 for (const [name, clip] of Object.entries(clips)) {
+  // Many imported actions share a 24 FPS timeline. Check every distinct timing
+  // shape once; asset coverage is verified separately for all 95 actions.
+  const signature=JSON.stringify([clip.durations,clip.loop]);
+  if(timelines.has(signature))continue;
+  timelines.add(signature);
   let total = 0;
   const times = new Set([-10, 0, 1]);
   for (const duration of clip.durations) { total += duration; for (const t of [total-1,total,total+1]) times.add(t); }
@@ -31,7 +37,11 @@ const expectedWork=workEvents.map(event=>{
   clock=event.at;if(event.state)director.setState(event.state);
   const frame=director.sample();return [frame.name,frame.index,Math.round(director.nextDelay*1e6)/1e6];
 });
-const input = JSON.stringify({clips, manifest, samples, peeks, workEvents});
+// Paths and translated catalog labels are irrelevant to clock conformance;
+// omitting them also keeps PowerShell 5.1 JSON parsing inexpensive.
+const timingClips=Object.fromEntries(Object.entries(clips).map(([name,clip])=>
+  [name,{frames:Array(clip.frames.length).fill(0),durations:clip.durations,loop:clip.loop}]));
+const input = JSON.stringify({clips:timingClips, manifest:{clips:timingClips}, samples, peeks, workEvents});
 function run(command, args) {
   const result = spawnSync(command, args, {cwd: root, input, encoding: 'utf8', windowsHide: true, maxBuffer: 8*1024*1024});
   if (result.error) throw result.error;

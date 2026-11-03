@@ -28,12 +28,14 @@ with tempfile.TemporaryDirectory(prefix='kiropet-tk-') as directory:
         assert namespace['mute'] is True and namespace['dock_enabled'] is False and namespace['notify_on_done'] is False
         assert namespace['size'] == namespace['configured_size'] == 140, 'legacy preferences overrode the small default'
         assert namespace['photo'].height() == 140, 'default Tk frame does not use the 140px asset'
-        unique = {p for clip in namespace['manifest']['clips'].values() for p in clip['frames']}
-        assert len(namespace['image_cache']) == len(unique)
         for name, clip in namespace['manifest']['clips'].items():
-            frames = namespace['frames_for'](name)
-            assert len(frames) == len(clip['frames'])
-            assert all(image.width() > 0 and image.height() > 0 for image in frames)
+            for index in (0,len(clip['frames'])-1):
+                image=namespace['frame_for'](name,index)
+                assert image.width()>0 and image.height()>0
+        for index in range(len(namespace['manifest']['clips']['idle']['frames'])):
+            namespace['frame_for']('idle',index)
+        assert len(namespace['image_cache'])==240
+        assert namespace['frame_for']('idle',0).height()==140
         state_file.write_text(json.dumps(dict(state='working', phase='start', at=1000)), encoding='utf-8')
         namespace['monitor']()
         started = namespace['work'].started
@@ -113,6 +115,6 @@ with tempfile.TemporaryDirectory(prefix='kiropet-tk-') as directory:
         saved = read_preferences(str(preferences_file))
         assert saved['mute'] is False and saved['dockEnabled'] is True and saved['notifyOnDone'] is False
         assert saved['size'] == saved['configuredSize'] == 140
-        print(f'Tk decoded {len(unique)} shared images at 140px and verified side folding, hover expansion, task handoff, completion and saved preferences in {time.perf_counter()-began:.2f}s.')
+        print(f'Tk verified {len(namespace['manifest']['catalog'])} actions with a bounded {len(namespace['image_cache'])}-frame cache at 140px and verified side folding, hover expansion, task handoff, completion and saved preferences in {time.perf_counter()-began:.2f}s.')
     finally:
         root.destroy()

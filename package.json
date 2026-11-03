@@ -1,8 +1,8 @@
 {
   "name": "kiro-whale-pet",
   "displayName": "KiroPet · 鲸鱼娘 AI 桌宠",
-  "description": "鲸鱼娘 AI 桌宠：小小只默认尺寸、多姿势逐帧动画、实时工作提示、平滑左右吸附收起。",
-  "version": "0.11.0",
+  "description": "鲸鱼娘 AI 桌宠：95 个透明动作、实时工作提示、左右吸附收起，个人非商业使用。",
+  "version": "0.12.0",
   "scripts": {
     "test": "node --test test/*.test.js",
     "verify": "node scripts/verify.js",
@@ -13,7 +13,7 @@
     "playwright": "1.62.1"
   },
   "publisher": "local-whale-pet",
-  "license": "MIT",
+  "license": "SEE LICENSE IN THIRD_PARTY_ASSETS.md",
   "icon": "assets/icon.png",
   "engines": {
     "vscode": "^1.85.0"

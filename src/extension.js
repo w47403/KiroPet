@@ -350,7 +350,7 @@ function htmlFor(webview) {
   p{font-size:11px;opacity:.72;line-height:1.5}
 </style></head><body>
 <header><span>🐋 鲸鱼娘</span><span class="tag" id="status">待机中</span></header>
-<div id="stage" title="点击摸摸头"><div id="bubble">嗨～一起写代码吧！</div><img id="pet" src="${uri}" alt="原创鲸鱼娘立绘"></div>
+<div id="stage" title="点击摸摸头"><div id="bubble">嗨～一起写代码吧！</div><img id="pet" src="${uri}" alt="鲸鱼娘"></div>
 <div id="activity">正在准备…</div><div id="events" style="font-size:12px;text-align:center;opacity:.8;margin:6px 0">等待 Kiro 本地事件…</div>
 <div class="buttons">
 <button data-action="showDesktop">打开桌面悬浮窗</button>
@@ -367,6 +367,7 @@ function htmlFor(webview) {
 <button data-action="checkSessions">诊断本地会话监听</button>
  <button class="secondary" data-action="checkLink">诊断事件联动</button>
 </div></details>
+<label>全部动作 <select id="animationChoice"><option value="">选择动作…</option></select></label>
 <p>关闭这个面板后，随时按 Ctrl/Cmd + Shift + P，运行「鲸鱼娘：打开 Kiro 内桌宠面板」。状态来自 Agent 事件，不代表真实 token 数量或 AI 内部思考进度。</p>
 <script nonce="${nonce}">
 ${playerSource}
@@ -375,12 +376,14 @@ const phrases=['在呢～','呼噜呼噜～','摸摸头～','你写代码，我�
 const manifest=${JSON.stringify(manifest)};const pet=document.getElementById('pet');
 const player=new WhaleAnimation.AnimationPlayer(manifest);const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 const loaded=new Map();let frameTimer=null;let lastFrame='';let assetsReady=false;
-function preload(name){const clip=manifest.clips[name];if(!clip)return;for(const src of clip.frames){if(loaded.has(src))continue;const img=new Image();const entry={img,ready:false};loaded.set(src,entry);entry.promise=new Promise(resolve=>{img.onload=async()=>{try{await img.decode();entry.ready=true;}catch{}resolve();};img.onerror=()=>resolve();});img.src=src;}}
-function animate(){clearTimeout(frameTimer);if(document.hidden||!assetsReady)return;const frame=player.sample(reduced.matches);if(frame.path!==lastFrame&&loaded.get(frame.path)?.ready){pet.src=frame.path;lastFrame=frame.path;}frameTimer=setTimeout(animate,player.nextDelay);}
+function preload(name,index=0){const clip=manifest.clips[name];if(!clip)return;for(let n=index;n<Math.min(clip.frames.length,index+12);n++){const src=clip.frames[n];if(loaded.has(src))continue;const img=new Image();const entry={img,ready:false};loaded.set(src,entry);entry.promise=new Promise(resolve=>{img.onload=async()=>{try{await img.decode();entry.ready=true;}catch{}resolve();};img.onerror=()=>resolve();});img.src=src;}while(loaded.size>240){loaded.delete(loaded.keys().next().value);}}
+let loadingFrame=false;
+function animate(){clearTimeout(frameTimer);if(document.hidden||!assetsReady||loadingFrame)return;const frame=player.sample(reduced.matches);preload(frame.name,frame.index);const entry=loaded.get(frame.path);if(!entry.ready){loadingFrame=true;player.pause('loading');entry.promise.then(()=>{loadingFrame=false;player.resume('loading');if(entry.ready)animate();else frameTimer=setTimeout(animate,250);});return;}if(frame.path!==lastFrame){pet.src=frame.path;lastFrame=frame.path;}frameTimer=setTimeout(animate,player.nextDelay);}
 document.addEventListener('visibilitychange',()=>{clearTimeout(frameTimer);if(document.hidden){player.pause();}else{player.resume();animate();draw();}});
 player.pause('loading');if(document.hidden)player.pause();
-for(const name of Object.keys(manifest.clips))preload(name);
+preload('idle');
 Promise.all([...loaded.values()].map(entry=>entry.promise)).then(()=>{assetsReady=true;player.resume('loading');animate();});
+const choice=document.getElementById('animationChoice');for(const action of manifest.catalog||[]){const option=document.createElement('option');option.value=action.id;option.textContent=action.nameZh;choice.appendChild(option);}choice.addEventListener('change',()=>{if(!choice.value)return;player.cancelReaction();player.react(choice.value);animate();choice.value='';});
 reduced.addEventListener('change',()=>animate());
 function say(text,ms=2800){bubble.textContent=text;until=Date.now()+ms;bubble.style.display='block'}
 pet.draggable=false;stage.style.touchAction='none';stage.style.userSelect='none';let press=null;

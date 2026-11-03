@@ -93,13 +93,14 @@ $script:typingPhase = 0.0
 $script:toolPhase = 0.0
 $script:sleepStarted = $null
 function Initialize-FrameCache {
-  # Decode before showing the window, never on the animation/UI timer.
+  # Bound decoded memory independently of the size of the animation catalog.
   $script:frameCache.Clear()
   $script:bitmapCache.Clear()
-  foreach ($name in $script:manifest.clips.PSObject.Properties.Name) {
-    $frames = @()
-    foreach ($relative in $script:manifest.clips.$name.frames) {
-      if ($script:bitmapCache.ContainsKey($relative)) { $frames += $script:bitmapCache[$relative]; continue }
+  $script:bitmapOrder = New-Object 'System.Collections.Generic.Queue[string]'
+}
+function Get-PetFrame([string]$name, [int]$index) {
+      $relative = $script:manifest.clips.$name.frames[$index]
+      if ($script:bitmapCache.ContainsKey($relative)) { return $script:bitmapCache[$relative] }
       $frame = New-Object System.Windows.Media.Imaging.BitmapImage
       $frame.BeginInit()
       $frame.UriSource = [System.Uri]::new((Join-Path $script:animationFolder $relative), [System.UriKind]::Absolute)
@@ -107,11 +108,10 @@ function Initialize-FrameCache {
       $frame.DecodePixelHeight = [int]$script:whaleSize
       $frame.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::IgnoreImageCache
       $frame.EndInit(); $frame.Freeze()
-      $frames += $frame
       $script:bitmapCache[$relative] = $frame
-    }
-    $script:frameCache[$name] = $frames
-  }
+      $script:bitmapOrder.Enqueue($relative)
+      while ($script:bitmapOrder.Count -gt 240) { $script:bitmapCache.Remove($script:bitmapOrder.Dequeue()) }
+      return $frame
 }
 Initialize-FrameCache
 function Switch-Art([string]$name, [bool]$Restart = $false) {
@@ -435,6 +435,35 @@ function Invoke-PetReaction {
   Update-Animation
 }
 Add-MenuItem $menu '🐋 摸摸鲸鱼娘' { Invoke-PetReaction }
+if ($script:manifest.catalog) {
+  $allActions = New-Object System.Windows.Controls.MenuItem
+  $allActions.Header = '全部动作（95）'
+  $groups = @{}
+  foreach ($action in $script:manifest.catalog) {
+    if (-not $groups.ContainsKey($action.category)) {
+      $group = New-Object System.Windows.Controls.MenuItem
+      $group.Header = $action.category
+      $groups[$action.category] = $group
+      [void]$allActions.Items.Add($group)
+    }
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $action.nameZh
+    $item.Tag = $action.id
+    $item.Add_Click({
+      Cancel-Reaction
+      $name = [string]$this.Tag
+      $script:reactionLength = ($script:manifest.clips.$name.durations | Measure-Object -Sum).Sum
+      $script:reactionSavedClip = $script:clipName
+      $script:reactionSavedStart = $script:clipStart
+      Switch-Art $name $true
+      $script:reactionUntil = [DateTime]::UtcNow.AddMilliseconds($script:reactionLength)
+      Say ([string]$this.Header)
+      Update-Animation
+    })
+    [void]$groups[$action.category].Items.Add($item)
+  }
+  [void]$menu.Items.Add($allActions)
+}
 Add-MenuItem $menu '💻 工作中' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'working'; Switch-Art 'happy'; Say '正在认真写代码！' }
 Add-MenuItem $menu '🛠 调用工具' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'tool'; Switch-Art 'tool'; Say '工具准备好啦～' }
 Add-MenuItem $menu '📝 修改文件' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'editing'; Switch-Art 'editing'; Say '正在更新文件～' }
@@ -661,6 +690,13 @@ function Update-Animation {
     } elseif ($script:clipName -ne $script:idleName) { Switch-Art $script:idleName }
   }
   $clip = $script:manifest.clips.($script:clipName)
+  if ($quiet -and $script:manifest.continuousIdle -and $script:idleStarted -and
+      ($now-$script:idleStarted).TotalMilliseconds -ge ($clip.durations | Measure-Object -Sum).Sum) {
+    Switch-Art 'idle'
+    $script:idleName = 'idle'
+    $script:idleStarted = $null
+    $clip = $script:manifest.clips.idle
+  }
   $elapsed = ($now - $script:clipStart).TotalMilliseconds
   if ($script:clipName -eq 'done' -and $script:doneStarted) { $elapsed=($now-$script:doneStarted).TotalMilliseconds }
   if ($script:clipName -eq 'sleep' -and $script:sleepStarted) { $elapsed=($now-$script:sleepStarted).TotalMilliseconds }
@@ -672,13 +708,15 @@ function Update-Animation {
   }
   if ($quiet -and $script:idleStarted) { $elapsed = ($now-$script:idleStarted).TotalMilliseconds }
   if ($quiet -and -not $script:idleStarted) { $elapsed = 0 }
+  if ($quiet -and $script:manifest.continuousIdle -and $script:clipName -eq 'idle') { $elapsed = ($now-$script:clipStart).TotalMilliseconds }
   $loop=($clip.loop -or ($working -and $script:mood -eq 'tool' -and $script:clipName -eq 'work_pause')) -and -not $quiet
+  if ($quiet -and $script:manifest.continuousIdle -and $script:clipName -eq 'idle') { $loop=$true }
   $sample=Get-FrameSample $clip $elapsed $loop
   $index=$sample.index; $nextFrameMs=$sample.delay
   # Sleep until the next frame boundary; a held pose needs no 60Hz polling.
   $script:animate.Interval = [TimeSpan]::FromMilliseconds([Math]::Max(16, [Math]::Min(250, $nextFrameMs)))
   if ($index -ne $script:lastFrameIndex) {
-    $script:picture.Source = $script:frameCache[$script:clipName][$index]
+    $script:picture.Source = Get-PetFrame $script:clipName $index
     $script:lastFrameIndex = $index
   }
   if ([DateTime]::UtcNow -gt $script:bubbleUntil) {

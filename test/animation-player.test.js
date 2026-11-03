@@ -6,7 +6,9 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {frameAt, frameDelay, AnimationPlayer} = require('../src/animation-player');
 const root = path.resolve(__dirname, '..');
-const manifest = JSON.parse(fs.readFileSync(path.join(root, 'assets/animations/manifest.json')));
+const imported = JSON.parse(fs.readFileSync(path.join(root, 'assets/animations/manifest.json')));
+// Exercise the optional quiet-hold mode as well as the imported continuous mode below.
+const manifest = {...imported, continuousIdle:false};
 
 test('adaptive scheduling targets frame boundaries and sleeps on held poses', () => {
   const clip = {durations: [160, 320], loop: true};
@@ -87,7 +89,7 @@ test('reactions expire back into current work and new states override them', () 
   now = 3000;
   player.react();
   assert.equal(player.sample().name, 'work_pet');
-  now = 8000;
+  now += sum(manifest.clips.work_pet.durations);
   assert.equal(player.sample().name, 'editing');
   player.react();
   player.setState('tool');
@@ -100,7 +102,7 @@ test('completion holds final pose and a new completion can replay', () => {
   let now = 0;
   const player = new AnimationPlayer(manifest, () => now);
   player.setState('done');
-  now = 10000;
+  now = sum(manifest.clips.done.durations);
   assert.equal(player.sample().index, manifest.clips.done.frames.length-1);
   player.setState('done', true);
   assert.equal(player.sample().index, 0);
@@ -127,7 +129,7 @@ test('task setup survives tool events, loops with breaks, and completion interru
   const player=new AnimationPlayer(manifest,()=>now,()=>0);
   player.setState('working');
   assert.equal(player.sample().name,'work_start');
-  now=1000;
+  now=sum(manifest.clips.work_start.durations)/2;
   const before=player.sample().index;
   player.setState('tool');
   assert.equal(player.sample().name,'work_start');
@@ -142,7 +144,7 @@ test('task setup survives tool events, loops with breaks, and completion interru
   player.setState('done',true);
   assert.equal(player.sample().name,'done');
   assert.equal(player.sample().index,0);
-  now+=10000;
+  now+=sum(manifest.clips.done.durations);
   assert.equal(player.sample().index,manifest.clips.done.frames.length-1);
   player.setState('working');
   assert.equal(player.sample().name,'work_start');
@@ -287,4 +289,18 @@ test('webview uses frame player and its emitted inline script parses', () => {
   assert.match(html, /visibilitychange/);
   const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
   assert.doesNotThrow(() => new vm.Script(script));
+});
+
+test('imported idle breathes continuously and every catalog action can be previewed', () => {
+  let now=0;
+  const player=new AnimationPlayer(imported,()=>now,()=>0);
+  now=1000;assert.equal(player.sample().name,'idle');assert.ok(player.sample().index>0);
+  now=22000;const action=player.sample().name;assert.notEqual(action,'idle');
+  now+=sum(imported.clips[action].durations);assert.equal(player.sample().name,'idle');
+  for(const entry of imported.catalog){
+    player.cancelReaction();player.react(entry.id);
+    assert.equal(player.sample().name,entry.id);
+    now+=sum(imported.clips[entry.id].durations);
+    assert.equal(player.sample().name,'idle');
+  }
 });

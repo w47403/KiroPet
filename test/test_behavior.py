@@ -19,13 +19,14 @@ class BehaviorTest(unittest.TestCase):
         for elapsed, expected in [(80,80), (160,250), (470,16), (480,160)]:
             self.assertEqual(frame_delay(clip, elapsed), expected)
         self.assertEqual(frame_delay(dict(clip, loop=False), 1000), 250)
-        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))
+        manifest['continuousIdle'] = False
         idle=IdleDirector(manifest,0)
         idle.sample(21950)
         self.assertEqual(idle.next_delay,50)
 
     def test_drag_continues_loop_and_freezes_underlying_work_clock(self):
-        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))
         drag=DragDirector(manifest)
         work=WorkDirector(manifest)
         work.set_state('idle','working',0)
@@ -43,13 +44,14 @@ class BehaviorTest(unittest.TestCase):
         self.assertEqual(work.sample('working',drag.timeline(34000)),('work_start',0))
 
     def test_task_intro_continues_across_tools_and_work_break_is_one_shot(self):
-        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))
         director=WorkDirector(manifest,random.Random(2))
         director.set_state('idle','working',0)
         self.assertEqual(director.sample('working',0),('work_start',0))
-        before=director.sample('working',1000)
-        director.set_state('working','tool',1000)
-        self.assertEqual(director.sample('tool',1000),before)
+        mid=sum(manifest['clips']['work_start']['durations'])/2
+        before=director.sample('working',mid)
+        director.set_state('working','tool',mid)
+        self.assertEqual(director.sample('tool',mid),before)
         total=sum(manifest['clips']['work_start']['durations'])
         self.assertEqual(director.sample('working',total+1)[0],'working')
         self.assertEqual(director.sample('working',24000)[0],'work_pause')
@@ -63,7 +65,8 @@ class BehaviorTest(unittest.TestCase):
         self.assertEqual(director.sample('working',end+1000),('work_start',0))
 
     def test_quiet_idle_interruption_and_nonrepetition(self):
-        manifest = json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        manifest = json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))
+        manifest['continuousIdle'] = False
         director = IdleDirector(manifest, 0, random.Random(12))
         for now in (0,1000,21999): self.assertEqual(director.sample(now),('idle',0))
         first = director.sample(22000)[0]
@@ -75,7 +78,7 @@ class BehaviorTest(unittest.TestCase):
         self.assertEqual(director.sample(121999),('idle',0))
 
     def test_rapid_events_keep_typing_phase_and_tools_suspend_the_typing_loop(self):
-        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))
         work=WorkDirector(manifest,random.Random(2))
         work.set_state('idle','working',0)
         total=lambda name: sum(manifest['clips'][name]['durations'])
@@ -96,7 +99,7 @@ class BehaviorTest(unittest.TestCase):
             previous=current
 
     def test_work_break_retains_the_background_pose(self):
-        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text())
+        manifest=json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))
         work=WorkDirector(manifest,random.Random(2))
         work.set_state('idle','working',0)
         now=work.next_at

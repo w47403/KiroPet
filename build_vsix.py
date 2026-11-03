@@ -15,10 +15,12 @@ from lock_work_desk import lock_desks
 from optimize_animation_assets import optimize
 from smooth_animation_assets import smooth
 
-stabilize_frames()
-lock_desks()
-optimize()
-smooth()
+current_animation = json.loads((ROOT / 'assets/animations/manifest.json').read_text(encoding='utf-8'))
+if not current_animation.get('assetSource'):
+    stabilize_frames()
+    lock_desks()
+    optimize()
+    smooth()
 p = json.loads((ROOT / 'package.json').read_text(encoding='utf8'))
 out = ROOT.parent / f"{p['name']}-{p['version']}.vsix"
 manifest = f'''<?xml version="1.0" encoding="utf-8"?>
@@ -66,6 +68,8 @@ files += ['src/activity-store.js', 'scripts/status_signal.py', 'scripts/dock_run
 files += [file.relative_to(ROOT).as_posix() for file in sorted((ROOT / 'docs').glob('*.md'))]
 animation = json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))
 files.append('assets/animations/manifest.json')
+if animation.get('assetSource'):
+    files += ['THIRD_PARTY_ASSETS.md', 'assets/animations/DSH-LICENSE.txt']
 files += ['assets/animations/'+prefix+frame
           for frame in sorted({frame for clip in animation['clips'].values() for frame in clip['frames']})
           for prefix in ('', 'tk/140/', 'tk/190/')]

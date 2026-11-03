@@ -199,6 +199,16 @@
         this.idleNext = time + duration + min + this.random() * (max-min);
       }
       const name = this.reaction ? this.reaction.name : this.state === 'idle' ? this.idleName : this.state;
+      if (this.manifest.continuousIdle && this.state === 'idle' && !this.reaction && !reducedMotion) {
+        const elapsed = time - (this.idleStart ?? this.started);
+        const duration = this.manifest.clips[name].durations.reduce((a,b)=>a+b,0);
+        const resting = name === 'idle' || elapsed >= duration;
+        const selected = resting ? 'idle' : name;
+        const clip = this.manifest.clips[selected];
+        const index = timedFrame({...clip, loop: resting}, resting ? time-this.started : elapsed);
+        this.nextDelay = Math.max(16, Math.min(this.nextDelay, this.idleNext-time));
+        return {name:selected,index,path:clip.frames[index]};
+      }
       const clip = this.manifest.clips[name];
       const start = this.reaction ? this.reaction.started : this.started;
       const index = reducedMotion || (this.state === 'idle' && !this.reaction && this.idleStart === null) ? 0 :

@@ -1,12 +1,12 @@
-# 🐋 KiroPet · 鲸鱼娘 AI 桌宠 v0.11.0
+# 🐋 KiroPet · 鲸鱼娘 AI 桌宠 v0.12.0
 
-Kiro / VS Code 兼容扩展。鲸鱼娘根据 Kiro 已保存的本地会话事件显示工作、工具、编辑和明确完成状态，并可展示最新回答摘录。21 段离线动画使用配准原画与运动补帧；运行时不调用模型、不发送聊天消息、不联网。
+Kiro / VS Code 兼容扩展。鲸鱼娘根据 Kiro 已保存的本地会话事件显示工作、工具、编辑和明确完成状态，并可展示最新回答摘录。动画已全量替换为 [dsh-whale-pet](https://github.com/luweiyabo/dsh-whale-pet) 的 95 个透明动作，保留原视频帧率与完整动作时长；运行时不调用模型、不发送聊天消息、不联网。
 
-非官方个人同人项目，与 DeepSeek、Kiro、OpenAI 无官方关联。图像为生成的二创风格插画，不是官方角色模型或 Live2D 模型。
+非官方个人自用项目，与 DeepSeek、Kiro、OpenAI 无官方关联。第三方动画来源、署名和禁商用条款见 [资源许可说明](THIRD_PARTY_ASSETS.md)，不属于本扩展的 MIT 源代码授权范围。
 
 ## 安装与开始使用
 
-1. 在 Kiro 中打开本地项目，运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.11.0.vsix`。
+1. 在 Kiro 中打开本地项目，运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.12.0.vsix`。
 2. 安装后运行 **Developer: Reload Window**。默认自动显示“小小只（140px）”桌面悬浮窗。
 3. 在 Kiro 原生聊天里发起一轮新请求。默认读取 `~/.kiro/sessions`，**无需安装 Hook**。
 4. 点击底部状态栏「鲸鱼娘」打开菜单。若系统浮窗启动失败，会提示原因并打开 IDE 内面板。
@@ -20,6 +20,7 @@ Kiro / VS Code 兼容扩展。鲸鱼娘根据 Kiro 已保存的本地会话事�
 - **摸头与拖动**：轻点互动；移动超过 8px 进入拖动，松手恢复当前任务。仅左右两侧可吸附并收起，鼠标靠近展开；顶部和底部不吸附，靠近左右角落也不自动调整高度。
 - **位置和偏好**：按当前工作区组合保存位置、尺寸、气泡静音、吸附及完成时自动展开的选择。Windows 右键可调整尺寸；新修改的 IDE 尺寸设置优先。
 - **完成时保持收起**：桌宠右键 →「完成时自动展开：开启 / 关闭」。收起后的徽标仍显示完成状态。
+- **全部动作**：Windows / Tk 右键菜单 →「全部动作（95）」；IDE 面板使用「全部动作」下拉框。选中的动作播放一次后恢复任务；新工作事件会接管演示。待机持续呼吸，间隔穿插日常、美食、节日等动作。
 - **手动演示与诊断**：状态栏菜单中的同名子菜单；面板中展开同名区域。手动状态会被后续真实 AI 事件接管。
 
 每个 IDE 窗口拥有自己的活动状态和桌宠。不同窗口不会互相清空状态；同一窗口打开多个项目时，优先显示尚在工作的会话。此版不提供跨窗口全局单实例汇总。
@@ -71,7 +72,7 @@ IDE 面板支持主题、隐藏时暂停和减少动态效果。Tk 目前按主�
 
 ## 开发与验证
 
-开发环境：Node.js 22+、Python 3.12+，素材构建需要 Pillow、NumPy 和 OpenCV（均列在 requirements-dev.txt）。运行扩展本身没有 npm 运行时依赖。
+开发环境：Node.js 22+、Python 3.12+，重新导入视频需要 Pillow 和 imageio-ffmpeg；旧版素材工具仍使用 NumPy 和 OpenCV（均列在 requirements-dev.txt）。运行扩展本身没有 npm 运行时依赖。
 
 ```sh
 npm ci
@@ -91,7 +92,9 @@ npm run verify -- --browser --tk
 - `KIRO_TEST_PYTHON` 可指定 Python 可执行文件，避免多版本 Python 混用。
 - `KIRO_TEST_BROWSER` 可指定已安装的 Chromium / Edge 可执行文件。
 - Linux 原生 Tk 检查需要显示服务，可用 `xvfb-run -a npm run verify -- --browser --tk`；需安装 `python3-tk`、`xvfb` 及浏览器所需系统依赖。
-- 单独打包：`python build_vsix.py`；脚本自动切图、定位校准、固定桌面，并为 PowerShell 文件写入 UTF-8 BOM。
+- 单独打包：`python build_vsix.py`；导入版直接打包当前清单中的素材，不再执行旧素材的补帧或桌面锁定。PowerShell 文件自动写入 UTF-8 BOM。
+- 重新导入：`python scripts/import_dsh_animations.py <dsh-whale-pet源码目录>`，一次性转换全部 95 个 WebM 为透明 PNG，并生成 Tk 尺寸。保留全部源帧；256 色透明调色板压缩减小逐帧包体。
+- 三种播放器均按需解码，最多缓存 240 帧；无需在启动时加载全部动作。
 
 源码入口：`src/extension.js`；会话适配：`src/session-monitor.js`；窗口与 Hook 状态：`src/activity-store.js`；原生播放器：`scripts/WhalePet.ps1`、`scripts/WhalePet.py`。动画素材说明见 [动画设计](docs/animation-design.md) 与 [v0.9.0 优化记录](docs/animation-optimization.md)。
 
