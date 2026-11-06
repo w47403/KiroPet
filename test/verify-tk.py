@@ -111,6 +111,24 @@ with tempfile.TemporaryDirectory(prefix='kiropet-tk-') as directory:
         finally:
             namespace['smooth_to'], root.winfo_pointerxy = smooth_to, pointerxy
             namespace['dock_edge'] = None
+        root.deiconify()
+        root.update_idletasks()
+        behavior=dict(mode='lively',initialHoldMs=8000,restMinMs=8000,restMaxMs=18000,clips=['cheerful_wave'],weights={})
+        for seq,(intent,clip) in enumerate([('reading','taking_notes'),('waiting','looking_around'),('error','jump_scare')],100):
+            visual=dict(intent=intent,clip=clip,seq=seq,loop=True,behavior=behavior,configKey='native-test')
+            event=dict(state='tool',at=seq,presentation=visual)
+            state_file.write_text(json.dumps(event),encoding='utf8')
+            namespace['monitor']()
+            assert namespace['last_frame'][0] == clip
+            started=namespace['presentation_start']
+            event['at']+=1
+            state_file.write_text(json.dumps(event),encoding='utf8')
+            namespace['monitor']()
+            assert namespace['presentation_start']==started
+        assert namespace['manifest']['idleBehavior']['restMinMs']==8000
+        assert namespace['mode_var'].get()=='lively'
+        namespace['request_behavior']('quiet')
+        assert json.loads(Path(str(state_file)+'.request.json').read_text(encoding='utf8'))['mode']=='quiet'
         namespace['save_window']()
         saved = read_preferences(str(preferences_file))
         assert saved['mute'] is False and saved['dockEnabled'] is True and saved['notifyOnDone'] is False

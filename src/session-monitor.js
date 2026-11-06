@@ -7,6 +7,7 @@ const {watch} = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const {priority} = require('./behavior-policy');
 const LIMIT = 4 * 1024 * 1024;
 const clean = (value, size = 110) => typeof value === 'string' ? value.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, size) : '';
 function replyExcerpt(value) {
@@ -32,7 +33,7 @@ function parseEvent(row, showReply = false) {
   if (!p || typeof p !== 'object' || !Number.isFinite(at) || typeof row.id !== 'string') return null;
   const base = {at, id: row.id, event: p.type, executionId: clean(p.executionId, 100), phase: 'continue'};
   switch (p.type) {
-    case 'user': return {...base, state: 'working', phase: 'start', detail: '已收到新请求'};
+    case 'user': return {...base, state: 'working', intent: 'listening', phase: 'start', detail: '已收到新请求'};
     case 'turn_start': return {...base, state: 'working', phase: 'start', detail: 'Kiro 开始处理请求'};
     case 'assistant':
       if (p.operationType !== 'Say') return null; // Never extract Reasoning content.
@@ -41,11 +42,16 @@ function parseEvent(row, showReply = false) {
     case 'tool_call': {
       const tool = clean(p.toolName, 60) || '工具';
       const editing = /^(str_replace|fs_write|fs_append|write_file|delete_file|semantic_rename|smart_relocate)$/.test(tool);
+      const name = tool.toLowerCase();
+      const intent = p.status === 'failed' ? 'error' : editing ? 'editing' :
+        /^(read|read_file|read_image|readfile|glob|grep|list_directory|list_files|fs_read|file_search|skill)$/.test(name) ? 'reading' :
+        /^(web_search|web_fetch|search|fetch|browse|websearch|webfetch)$/.test(name) ? 'researching' :
+        /^(bash|pwsh|powershell|execute_bash|execute_command|run_command|write|edit|str_replace_editor|todo_write|workflow)$/.test(name) ? 'coding' : 'thinking';
       const status = p.status === 'completed' ? '已执行' : p.status === 'failed' ? '执行失败' : '调用';
-      return {...base, state: editing ? 'editing' : 'tool', detail: `${status}工具 · ${tool}`};
+      return {...base, state: editing ? 'editing' : 'tool', intent, detail: `${status}工具 · ${tool}`};
     }
-    case 'tool_result': return {...base, state: 'working', detail: p.success === false ? '工具返回错误 · 等待 Kiro 后续处理' : '工具已返回 · 继续处理'};
-    case 'pending_interaction': return {...base, state: 'tool', detail: '等待你在 Kiro 中确认或回答'};
+    case 'tool_result': return {...base, state: 'working', intent: p.success === false ? 'error' : 'working', detail: p.success === false ? '工具返回错误 · 等待 Kiro 后续处理' : '工具已返回 · 继续处理'};
+    case 'pending_interaction': return {...base, state: 'tool', intent: 'waiting', detail: '等待你在 Kiro 中确认或回答'};
     case 'interaction_resolved': return {...base, state: 'working', detail: '确认已处理 · 等待后续记录'};
     case 'sub_agent_start': return {...base, state: 'tool', detail: 'Kiro 正在调用子任务'};
     case 'sub_agent_complete': return {...base, state: 'working', detail: '子任务已返回 · 主任务尚未确认结束'};
@@ -55,7 +61,7 @@ function parseEvent(row, showReply = false) {
     }
     case 'turn_end':
       if (p.stopReason === 'end_turn') return {...base, state: 'done', phase: 'finish', detail: 'Kiro 已确认本轮完成'};
-      if (p.stopReason === 'cancelled' || p.stopReason === 'error') return {...base, state: 'idle', phase: 'finish', detail: p.stopReason === 'cancelled' ? '本轮已取消' : '本轮因错误结束，请查看 Kiro'};
+      if (p.stopReason === 'cancelled' || p.stopReason === 'error') return {...base, state: 'idle', intent: p.stopReason === 'error' ? 'error' : 'idle', phase: 'finish', detail: p.stopReason === 'cancelled' ? '本轮已取消' : '本轮因错误结束，请查看 Kiro'};
       return {...base, state: 'idle', phase: 'finish', detail: '本轮已结束（结束原因未识别）'};
     default: return null;
   }
@@ -316,7 +322,7 @@ class SessionMonitor {
   publish() {
     const all = [...this.sessions.values()];
     const active = all.filter(s => ['working', 'tool', 'editing'].includes(s.state));
-    const selected = (active.length ? active : all).sort((a, b) => b.at - a.at)[0];
+    const selected = (active.length ? active : all).sort((a, b) => (active.length ? priority(b)-priority(a) : 0) || b.at - a.at)[0];
     if (!selected && this.lastPublished === undefined) return;
     const activity = selected ? {...selected, activeSessions: active.length} : null;
     const signature = JSON.stringify(activity);

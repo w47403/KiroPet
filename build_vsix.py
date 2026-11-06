@@ -63,7 +63,7 @@ content_types = '''<?xml version="1.0" encoding="utf-8"?>
 '''
 files = ['package.json', 'src/extension.js', 'src/animation-player.js', 'src/event-health.js', 'src/session-monitor.js', 'scripts/WhalePet.ps1', 'scripts/WhalePet.py', 'scripts/animation_runtime.py', 'scripts/HookSignal.ps1', 'scripts/HookSignal.sh', 'assets/whale-girl.png', 'assets/icon.png', 'README.md', 'LICENSE']
 files += [f'assets/moods/{name}.png' for name in ('idle','happy','hug','sleep','done')]
-files += ['src/activity-store.js', 'scripts/status_signal.py', 'scripts/dock_runtime.py',
+files += ['src/behavior-policy.js', 'src/activity-store.js', 'scripts/status_signal.py', 'scripts/dock_runtime.py',
           'scripts/preferences.py', 'scripts/PetPreferences.ps1', 'scripts/animation_timing.ps1', 'CHANGELOG.md']
 files += [file.relative_to(ROOT).as_posix() for file in sorted((ROOT / 'docs').glob('*.md'))]
 animation = json.loads((ROOT/'assets/animations/manifest.json').read_text(encoding='utf-8'))

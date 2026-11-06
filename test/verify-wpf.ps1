@@ -220,7 +220,7 @@ foreach ($size in @(100,140,190,260,320)) {
   $script:root.Measure([System.Windows.Size]::new($script:window.Width,$script:window.Height))
   $script:root.Arrange([System.Windows.Rect]::new(0,0,$script:window.Width,$script:window.Height))
   $script:root.UpdateLayout()
-  if ($script:picture.Width -ne $size -or $script:picture.Height -ne $size -or $script:picture.ActualWidth -le 0 -or $script:picture.ActualWidth -gt $size -or $script:picture.ActualHeight -gt $size) { throw "Wrong pet layout at ${size}: $($script:picture.ActualWidth) x $($script:picture.ActualHeight)" }
+  if ($script:picture.Width -ne $size*$script:frameAspect -or $script:picture.Height -ne $size -or $script:picture.ActualWidth -le 0 -or $script:picture.ActualWidth -gt $size*$script:frameAspect -or $script:picture.ActualHeight -gt $size) { throw "Wrong pet layout at ${size}: $($script:picture.ActualWidth) x $($script:picture.ActualHeight)" }
 }
 $unique=@($script:manifest.clips.PSObject.Properties | ForEach-Object { $_.Value.frames } | Sort-Object -Unique)
 if ($script:bitmapCache.Count -gt 240) { throw 'Decoded cache grew with the catalog' }
@@ -255,6 +255,32 @@ $event.reply=''
 [System.IO.File]::WriteAllText($StatePath,($event|ConvertTo-Json))
 Update-Activity
 if ($script:doneStarted -ne $doneStart) { throw 'Preview change replayed the completion animation' }
+$behavior=@{mode='lively';initialHoldMs=8000;restMinMs=8000;restMaxMs=18000;clips=@('cheerful_wave');weights=@{}}
+$seq=100
+foreach ($pair in @(@('reading','taking_notes'),@('waiting','looking_around'),@('error','jump_scare'))) {
+  $seq++
+  $visual=@{intent=$pair[0];clip=$pair[1];seq=$seq;loop=$true;behavior=$behavior;configKey='native-test'}
+  $event=@{state='tool';at=$seq;presentation=$visual}
+  [System.IO.File]::WriteAllText($StatePath,($event|ConvertTo-Json -Depth 8))
+  Update-Activity
+  if ($script:lastRenderedName -ne $pair[1]) { throw "Presentation did not render $($pair[1])" }
+  $start=$script:presentationStart
+  $event.at++
+  [System.IO.File]::WriteAllText($StatePath,($event|ConvertTo-Json -Depth 8))
+  Update-Activity
+  if ($script:presentationStart -ne $start) { throw 'Repeated event restarted presentation' }
+}
+if ($script:manifest.idleBehavior.restMinMs -ne 8000 -or -not $script:modeItems.lively.IsChecked) { throw 'Live mode update failed' }
+Send-BehaviorRequest -mode 'quiet'
+$request=Get-Content -LiteralPath ($StatePath+'.request.json') -Raw | ConvertFrom-Json
+if ($request.mode -ne 'quiet') { throw 'Desktop mode request failed' }
+Remove-Item -LiteralPath ($StatePath+'.request.json')
+$script:presentation=$null; $script:mood='idle'; $script:reactionUntil=$null
+$script:manifest.idleBehavior.clips=@()
+$script:idleNext=(Get-AnimationTime).AddSeconds(-1)
+Update-Animation
+if ($script:lastRenderedName -ne 'idle') { throw 'Empty idle pool must safely breathe' }
+Write-Output 'WPF fine-grained presentation, same-state continuity and live behavior controls passed.'
 $script:animate.Stop()
 $script:monitor.Stop()
 $script:window.Close()

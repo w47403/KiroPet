@@ -1,105 +1,118 @@
-# 🐋 KiroPet · 鲸鱼娘 AI 桌宠 v0.12.0
+<div align="center">
 
-Kiro / VS Code 兼容扩展。鲸鱼娘根据 Kiro 已保存的本地会话事件显示工作、工具、编辑和明确完成状态，并可展示最新回答摘录。动画已全量替换为 [dsh-whale-pet](https://github.com/luweiyabo/dsh-whale-pet) 的 95 个透明动作，保留原视频帧率与完整动作时长；运行时不调用模型、不发送聊天消息、不联网。
+# 🐋 KiroPet · 鲸鱼娘桌宠
 
-非官方个人自用项目，与 DeepSeek、Kiro、OpenAI 无官方关联。第三方动画来源、署名和禁商用条款见 [资源许可说明](THIRD_PARTY_ASSETS.md)，不属于本扩展的 MIT 源代码授权范围。
+**你写代码，她陪你工作。**
+
+为 Kiro / VS Code 兼容编辑器打造的桌宠扩展：透明悬浮窗、任务状态联动、中文动作菜单和可自定义的陪伴节奏。
+
+[使用指南](docs/USAGE.md) · [构建安装包](#从源码构建) · [更新记录](CHANGELOG.md) · [反馈问题](https://github.com/w47403/KiroPet/issues)
+
+<img src="assets/whale-girl.png" width="360" alt="鲸鱼娘待机形象，动画来自 dsh-whale-pet" />
+
+</div>
+
+> **动画来源声明**：本项目当前使用的 **全部 95 个动画均来自 [luweiyabo/dsh-whale-pet](https://github.com/luweiyabo/dsh-whale-pet)**，动画并非 KiroPet 原创。该项目的大部分动画进一步来源于 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。感谢原作者的创作与分享！**代码与动画分别授权：代码 MIT，第三方动画不适用本项目 MIT 授权，禁止商业使用。** 完整署名、导入版本及资源条款见 [第三方资源说明](THIRD_PARTY_ASSETS.md)。
+
+## 可以做什么
+
+| 功能 | 说明 |
+| --- | --- |
+| 透明桌面悬浮窗 | 拖动、摸摸互动、左右边缘吸附收起、完成时自动展开 |
+| 跟随真实任务 | 读取 Kiro 本地会话记录，区分阅读、搜索、编码、修改、等待确认、报错与完成 |
+| 95 个完整动作 | 中文分类与手动点播；保留源帧率与时长，统一画布避免切换时忽大忽小 |
+| 三档活跃度 | 安静、均衡、活泼，按自己的工作习惯选择 |
+| 自定义动作池 | 12 类状态可分别多选动作，也能排除不喜欢的自动动作 |
+| 更平稳的切换 | 状态优先级与切换缓冲；连续同类事件不反复重播 |
+| 回答摘录气泡 | 可选显示最新一两句已保存的可见回答，支持静音与关闭 |
+| 编辑器内面板 | 不方便使用桌面窗时，可切换为编辑器内展示 |
+
+**运行时不调用模型、不向远端上传会话、不消耗模型额度。** Kiro 自动联动只适配已支持的本地会话格式；在普通 VS Code 中安装不等于能自动识别其他 AI 扩展，仍可使用桌宠、面板与手动演示。
+
+## 动作预览
+
+以下是导入动画的静态帧，实际使用中连续播放。所有预览素材同样来自上述动画项目。
+
+<table>
+<tr><th>编写代码</th><th>阅读记录</th><th>等待确认</th></tr>
+<tr>
+<td><img src="assets/animations/dsh/coding/0080.png" width="260" alt="编写代码动作" /></td>
+<td><img src="assets/animations/dsh/taking_notes/0080.png" width="260" alt="记笔记动作" /></td>
+<td><img src="assets/animations/dsh/looking_around/0080.png" width="260" alt="东张西望动作" /></td>
+</tr>
+</table>
 
 ## 安装与开始使用
 
-1. 在 Kiro 中打开本地项目，运行 **Extensions: Install from VSIX...**，选择 `kiro-whale-pet-0.12.0.vsix`。
-2. 安装后运行 **Developer: Reload Window**。默认自动显示“小小只（140px）”桌面悬浮窗。
-3. 在 Kiro 原生聊天里发起一轮新请求。默认读取 `~/.kiro/sessions`，**无需安装 Hook**。
-4. 点击底部状态栏「鲸鱼娘」打开菜单。若系统浮窗启动失败，会提示原因并打开 IDE 内面板。
+1. 从 [Releases](https://github.com/w47403/KiroPet/releases) 选择已发布版本；未发布版本可[从源码构建](#从源码构建)。`main` 上通过验证的构建也会保存在 [Actions](https://github.com/w47403/KiroPet/actions) 的 `KiroPet-vsix` 附件中（下载附件需要登录 GitHub）。
+2. 在编辑器命令面板运行 **Extensions: Install from VSIX…**，选择 `.vsix` 文件，再运行 **Developer: Reload Window**。
+3. 在 Kiro 中打开本地项目，并发起一轮**新的**聊天请求。默认监听 `~/.kiro/sessions`，无需安装额外事件联动脚本。
+4. 点击底部状态栏「鲸鱼娘」打开控制菜单，或右键桌宠选择动作与活跃度。
 
-启动时跳过已有对话历史。安装、重新加载或更换会话目录后，需要发起新一轮请求。普通切换回答摘录开关或增减工作区，不会丢失仍在监听范围内的任务。
+当前源码版本为 **0.13.0**。安装包包含全部透明逐帧素材，体积约 **869 MiB**，请预留下载和解压空间。启动采用按需加载，三种播放器的解码缓存均有上限。
 
-## 日常操作
+启动时不会回放历史聊天。若一直待机，先运行「鲸鱼娘：诊断本地会话监听」。完整设置、旧版事件联动、平台限制与常见问题见 [使用指南](docs/USAGE.md)。
 
-- **重新显示 / 关闭浮窗**：状态栏菜单，或命令「鲸鱼娘：显示桌面悬浮窗 / 关闭桌面悬浮窗」。
-- **打开 IDE 面板**：命令「鲸鱼娘：打开 Kiro 内桌宠面板」。
-- **摸头与拖动**：轻点互动；移动超过 8px 进入拖动，松手恢复当前任务。仅左右两侧可吸附并收起，鼠标靠近展开；顶部和底部不吸附，靠近左右角落也不自动调整高度。
-- **位置和偏好**：按当前工作区组合保存位置、尺寸、气泡静音、吸附及完成时自动展开的选择。Windows 右键可调整尺寸；新修改的 IDE 尺寸设置优先。
-- **完成时保持收起**：桌宠右键 →「完成时自动展开：开启 / 关闭」。收起后的徽标仍显示完成状态。
-- **全部动作**：Windows / Tk 右键菜单 →「全部动作（95）」；IDE 面板使用「全部动作」下拉框。选中的动作播放一次后恢复任务；新工作事件会接管演示。待机持续呼吸，间隔穿插日常、美食、节日等动作。
-- **手动演示与诊断**：状态栏菜单中的同名子菜单；面板中展开同名区域。手动状态会被后续真实 AI 事件接管。
+## 调成你喜欢的节奏
 
-每个 IDE 窗口拥有自己的活动状态和桌宠。不同窗口不会互相清空状态；同一窗口打开多个项目时，优先显示尚在工作的会话。此版不提供跨窗口全局单实例汇总。
+桌宠右键 → **活跃度**，或状态栏 → **活跃度与动作设置**：
 
-## 设置
+| 模式 | 每次空闲随机动作结束后的休息间隔 |
+| --- | --- |
+| 安静 | 45～90 秒 |
+| 均衡（默认） | 22～45 秒 |
+| 活泼 | 8～18 秒 |
 
-从状态栏菜单或面板点击「设置」，也可在设置中搜索 `kiroWhalePet`。
+选择 **配置动作池（在编辑器中打开）**，用中文多选菜单设置各状态的动作、排除列表或恢复默认。设置自动保存并立即同步到播放器。
 
-| 设置 | 默认 | 作用 |
-| --- | --- | --- |
-| `autoStart` | `true` | Kiro 启动后自动显示 |
-| `desktopMode` | `auto` | 系统浮窗；设为 `panel` 则只使用 IDE 面板 |
-| `size` | `140` | 默认“小小只”，显示框尺寸100～320；重新打开浮窗生效 |
-| `localSessions.enabled` | `true` | 只读监听当前本地项目的会话 |
-| `localSessions.directory` | 空 | sessions 根目录；默认 `~/.kiro/sessions` |
-| `localSessions.showReplyPreview` | `true` | 显示最新一两句可见回答，最多 90 个 Unicode 字符；可随时切换 |
-| `autoInstallHooksNewProjects` | `false` | 仅兼容 Hook 模式下，自动为后来打开的项目安装已授权联动 |
+动作优先展示报错和等待确认；升优先级缓冲 500 毫秒，降级或同级切换缓冲 1.5 秒。新任务与明确结束可以立即切换。工作状态持续循环，待机间隔穿插随机活动，完成动作播放一次。任务状态与动画分开记录，动画缓冲不会延迟完成记录。
 
-## 联动与隐私
+## 平台与隐私
 
-- 只处理已写入本地的真实事件；只在明确 `turn_end / end_turn` 后显示完成。取消、错误和未知结束原因不会伪装成成功；静默也不等于完成。
-- 回答摘录仅取 assistant / Say，完成后最多保留 8 秒。Kiro 是否实时保存生成中的回答取决于其版本，不保证逐 token 显示。
-- 不提取或展示 Reasoning、提示词、工具参数、工具结果。读取 JSONL 时这些字段可能短暂进入解析内存，持久状态仅保留元数据及启用后的回答摘录。
-- 窗口状态保存在扩展全局存储的 `runtime/` 内，并在扩展正常退出时删除；项目 Hook 消息在 `hooks/`，偏好在 `preferences/`。不向远端传输。
-- 当前适配 Kiro IDE schemaVersion 1.x / dataModelVersion 1。旧 globalStorage、CLI、SSH/容器中的远端项目不在默认监听范围。
+- **Windows 10/11**：WPF 透明悬浮窗，使用系统 Windows PowerShell 5.1。
+- **macOS / Linux**：Tk 桌面窗为试验性支持，需要 Python 3 + Tk；透明、置顶和位置行为受系统影响。Wayland 建议使用编辑器内面板。
+- **数据留在本机**：仅监听当前本地工作区的 Kiro 会话；不提取或展示思考内容、提示词、工具参数及工具结果。回答摘录可关闭。
+- **不猜测任务完成**：只认明确的完成事件；取消、报错和长时间静默不会被当作成功。多个会话并行时优先展示未完成的任务。
 
-## 常见问题
+本项目非官方，与 Kiro、DeepSeek、OpenAI 无官方关联。鲸鱼娘为社区二创形象，不是 DeepSeek 官方形象。
 
-**一直待机**：确认打开了本地项目，并在重新加载扩展后发起过新请求；运行「鲸鱼娘：诊断本地会话监听」，检查目录、匹配数、格式和读取错误。诊断不输出聊天正文。
+## 从源码构建
 
-**一直工作**：查看最近事件。缺少明确结束记录时会显示「完成状态未确认」，不会按超时编造完成。若 Kiro 升级改变格式，诊断中的不支持格式计数可帮助定位。
-
-**关闭后找不到桌宠**：重新运行「鲸鱼娘：显示桌面悬浮窗」；要关闭下次自动启动，在状态栏菜单切换自动显示。
-
-**关闭回答摘录**：关闭 `localSessions.showReplyPreview`。已显示的摘录立即清除，当前任务和完成监听继续。
-
-**需要旧 Hook 联动**：关闭 `localSessions.enabled`，再从「手动演示与诊断」安装 Agent Hooks。已有、可识别的鲸鱼娘 Hook 会升级并保留 `.bak`；第三方或混合 Hook 不会被覆盖。启用本地监听时，已有桌宠 Hook 会备份移到 `.kiro/whale-pet-backups/`。新 Hook 会话开始后生效。
-
-## 平台支持
-
-| 平台 | 系统浮窗 | 依赖与限制 |
-| --- | --- | --- |
-| Windows 10/11 | WPF 透明窗、拖动、吸附、右键 | 系统 Windows PowerShell 5.1 + WPF；公司策略可能限制启动 |
-| macOS | 试验性 Tk | Python 3 + Tk；透明与窗口行为依系统而异 |
-| Linux X11 | 试验性 Tk | Python 3 + Tk，窗口管理器决定透明和置顶行为 |
-| Linux Wayland | 依桌面环境 | 建议使用 IDE 面板 |
-
-IDE 面板支持主题、隐藏时暂停和减少动态效果。Tk 目前按主屏幕恢复位置；Windows 支持负坐标显示器和移除显示器后的可见区域恢复。macOS 和 Linux 原生系统上的最终安装观感仍需对应设备验证。
-
-## 开发与验证
-
-开发环境：Node.js 22+、Python 3.12+，重新导入视频需要 Pillow 和 imageio-ffmpeg；旧版素材工具仍使用 NumPy 和 OpenCV（均列在 requirements-dev.txt）。运行扩展本身没有 npm 运行时依赖。
+需要 Git、Node.js 22+、Python 3.12+。完整仓库包含动画资源，首次克隆耗时较长。
 
 ```sh
+git clone --depth 1 https://github.com/w47403/KiroPet.git
+cd KiroPet
 npm ci
 python -m pip install -r requirements-dev.txt
+python build_vsix.py
+```
+
+安装包输出到仓库上级目录。运行回归测试和打包验证：
+
+```sh
 npm run verify
 ```
 
-该入口执行语法检查、JS 回归、素材构建、VSIX 打包、Python 回归、跨语言换帧边界检查；Windows 还执行原生 WPF 验证。VSIX 输出到项目上级目录。
+可选浏览器与原生 Tk 验证、动画重新导入和环境变量配置见 [开发与验证](docs/USAGE.md#开发与验证)。版本标签的自动发布说明见 [发布流程](docs/USAGE.md#发布)。
 
-可选的完整窗口与浏览器检查：
+| 入口 | 职责 |
+| --- | --- |
+| `src/extension.js` | 编辑器菜单、配置与桌宠启动 |
+| `src/session-monitor.js` | 只读会话事件适配 |
+| `src/behavior-policy.js` | 状态优先级、缓冲、活跃度与动作池 |
+| `src/animation-player.js` | 编辑器内动画播放器 |
+| `scripts/WhalePet.ps1` / `WhalePet.py` | Windows WPF / Tk 桌面窗 |
+| `scripts/import_dsh_animations.py` | 上游透明视频转逐帧素材 |
 
-```sh
-npx playwright install chromium
-npm run verify -- --browser --tk
-```
+## 来源、致谢与许可证
 
-- `KIRO_TEST_PYTHON` 可指定 Python 可执行文件，避免多版本 Python 混用。
-- `KIRO_TEST_BROWSER` 可指定已安装的 Chromium / Edge 可执行文件。
-- Linux 原生 Tk 检查需要显示服务，可用 `xvfb-run -a npm run verify -- --browser --tk`；需安装 `python3-tk`、`xvfb` 及浏览器所需系统依赖。
-- 单独打包：`python build_vsix.py`；导入版直接打包当前清单中的素材，不再执行旧素材的补帧或桌面锁定。PowerShell 文件自动写入 UTF-8 BOM。
-- 重新导入：`python scripts/import_dsh_animations.py <dsh-whale-pet源码目录>`，一次性转换全部 95 个 WebM 为透明 PNG，并生成 Tk 尺寸。保留全部源帧；256 色透明调色板压缩减小逐帧包体。
-- 三种播放器均按需解码，最多缓存 240 帧；无需在启动时加载全部动作。
+- **直接动画来源**：[luweiyabo/dsh-whale-pet](https://github.com/luweiyabo/dsh-whale-pet)，本项目导入其全部 95 个动作，并借鉴动作触发与配置思路。
+- **上游素材项目**：[PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。原作者地址和素材条款随仓库保留。
+- **形象设计署名**：根据上游说明，原型「溟月」出自 B 站 [@上善无形](https://space.bilibili.com/4456176)，DeepSeek 版女仆鲸鱼娘设计出自 [@ZipZipPipe](https://space.bilibili.com/4168597)。上游注明形象采用 **CC BY-NC-SA 4.0**（署名、非商业、相同方式共享）。
+- **KiroPet 代码**：采用 [MIT License](LICENSE)。本项目的工作包括编辑器适配、本地事件监听、原生窗口、动作调度、素材转换与测试；不主张动画或角色设计的原创权。
+- **动画与衍生图片**：不由本项目重新授予 MIT 权利，仍须遵守上游素材和形象条款；不得据代码的 MIT 许可证将素材用于商业用途。
 
-源码入口：`src/extension.js`；会话适配：`src/session-monitor.js`；窗口与 Hook 状态：`src/activity-store.js`；原生播放器：`scripts/WhalePet.ps1`、`scripts/WhalePet.py`。动画素材说明见 [动画设计](docs/animation-design.md) 与 [v0.9.0 优化记录](docs/animation-optimization.md)。
+导入提交、资源路径、逐文件校验信息与原始声明见 [THIRD_PARTY_ASSETS.md](THIRD_PARTY_ASSETS.md)。
 
-## 发布
-
-`main`、PR 和手动运行只生成经过检查的安装包，正式 Release 仅在推送 `v<package.json版本>` 标签时创建。标签版本必须与包版本一致；已有 Release 不会被覆盖。CI 安装包附 `SHA256SUMS`，包内 `build-info.json` 记录源码提交与是否存在本地改动。
-
-历史版本见 [CHANGELOG](CHANGELOG.md)，本版改动的设计和验证边界见 [可靠性记录](docs/reliability-v0100.md)。
+欢迎提交 Issue 与 PR。反馈问题时请附扩展版本、系统、编辑器版本和复现步骤；不要上传私人聊天记录或密钥。贡献说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。

@@ -46,6 +46,20 @@
       this.workAccent = null;
       this.workNext = Infinity;
     }
+    setPresentation(value) {
+      if (!value) { this.presentation=null; return; }
+      const time=this.pausedAt ?? this.now();
+      if (!this.presentation || value.seq!==this.presentation.seq) {
+        if (['waiting','error','done'].includes(value.intent)) this.cancelReaction(time);
+        this.presentationStart=time;
+      }
+      if (!this.presentation || value.configKey!==this.presentation.configKey) {
+        this.manifest.idleBehavior=value.behavior;
+        this.idleName='idle'; this.idleStart=null;
+        this.idleNext=time+value.behavior.initialHoldMs;
+      }
+      this.presentation=value;
+    }
     setState(state, restart = false) {
       const next = this.manifest.clips[state] ? state : 'idle';
       const active = name => ['working','tool','editing'].includes(name);
@@ -134,6 +148,7 @@
     }
     shiftTimeline(shift) {
       this.started += shift;
+      if (this.presentationStart !== undefined) this.presentationStart += shift;
       this.loopStarted += shift;
       this.idleNext += shift;
       if (this.idleStart !== null) this.idleStart += shift;
@@ -160,6 +175,12 @@
           this.shiftTimeline(duration);
           this.reaction = null;
         }
+      }
+      if (this.presentation?.clip && !this.reaction && this.manifest.clips[this.presentation.clip]) {
+        const name=this.presentation.clip;
+        const clip={...this.manifest.clips[name],loop:this.presentation.loop};
+        const index=reducedMotion ? 0 : timedFrame(clip,time-this.presentationStart);
+        return {name,index,path:clip.frames[index]};
       }
       if (this.taskStarted !== null && !this.reaction) {
         const intro = this.manifest.clips.work_start;

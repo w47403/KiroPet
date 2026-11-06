@@ -28,7 +28,14 @@ const server=http.createServer((req,res)=>{
     await page.addInitScript(()=>{window.acquireVsCodeApi=()=>({postMessage(){}});});
     await page.goto(origin);
     await page.waitForFunction(()=>assetsReady);
-    const assets=await page.evaluate(()=>({total:loaded.size,ready:[...loaded.values()].filter(e=>e.ready).length}));
+    const assets=await page.evaluate(async()=>{
+      player.pause('asset-check');
+      clearTimeout(frameTimer);
+      await Promise.all([...loaded.values()].map(entry=>entry.promise));
+      const result={total:loaded.size,ready:[...loaded.values()].filter(entry=>entry.ready).length};
+      player.resume('asset-check');
+      return result;
+    });
     assert.equal(assets.total,assets.ready);
     await page.evaluate(()=>{window.testNow=0;player.now=()=>window.testNow;player.setState('working',true);animate();});
     await page.waitForFunction(()=>!loadingFrame);
@@ -82,9 +89,20 @@ const server=http.createServer((req,res)=>{
       await page.locator('#animationChoice').selectOption(name);
       await page.waitForFunction(name=>!loadingFrame && pet.src.includes('/'+name+'/'),name);
       assert.ok(await page.evaluate(()=>loaded.size<=240));
+      assert.deepEqual(await page.evaluate(()=>[pet.naturalWidth,pet.naturalHeight]),[608,342]);
     }
     assert.deepEqual(errors,[]);
     assert.ok(await page.evaluate(()=>loaded.size<=240));
+    await page.evaluate(()=>{
+      player.cancelReaction();
+      const presentation={intent:'reading',label:'阅读文件',clip:'taking_notes',seq:101,loop:true,
+        configKey:'browser-test',behavior:{mode:'lively',initialHoldMs:8000,restMinMs:8000,restMaxMs:18000,clips:['cheerful_wave'],weights:{}}};
+      window.dispatchEvent(new MessageEvent('message',{data:{type:'activity',activity:{state:'tool',at:999,presentation}}}));
+    });
+    await page.waitForFunction(()=>!loadingFrame && pet.src.includes('/taking_notes/'));
+    assert.equal(await page.locator('#status').textContent(),'阅读文件');
+    assert.equal(await page.evaluate(()=>manifest.idleBehavior.restMinMs),8000);
+    assert.deepEqual(errors,[]);
     console.log(JSON.stringify({assets,errors,checks:['real image loading','work reaction resume','idle scene','drag landing','reduced motion'],output}));
   }finally{if(browser)await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

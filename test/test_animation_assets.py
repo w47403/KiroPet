@@ -46,7 +46,7 @@ class AnimationAssetsTest(unittest.TestCase):
         for action in MANIFEST['catalog']:
             clip = MANIFEST['clips'][action['id']]
             for index in (0,len(clip['frames'])//2,len(clip['frames'])-1):
-                for prefix, size in (('',(256,342)),('tk/140/',(105,140)),('tk/190/',(142,190))):
+                for prefix, size in (('',(608,342)),('tk/140/',(249,140)),('tk/190/',(338,190))):
                     with Image.open(ROOT/'assets/animations'/prefix/clip['frames'][index]) as raw:
                         frame=raw.convert('RGBA')
                     self.assertEqual(frame.size,size)
@@ -54,6 +54,19 @@ class AnimationAssetsTest(unittest.TestCase):
                     self.assertEqual(alpha.getextrema(),(0,255))
                     self.assertIsNotNone(alpha.getbbox())
                     self.assertEqual(frame.getpixel((0,0))[3],0)
+
+    def test_actions_keep_the_same_character_scale(self):
+        self.assertEqual(MANIFEST['sourceFrameSize'], [640,360])
+        self.assertEqual(MANIFEST['artSize'], [598,336])
+        heights = []
+        for name in ('breathing', 'deep_thought', 'shy_surprise',
+                     'setting_off_fireworks', 'water_gun_play', 'butterflies_and_blossoms'):
+            with Image.open(ROOT/'assets/animations'/MANIFEST['clips'][name]['frames'][0]) as raw:
+                # The central body region excludes distant particles and props.
+                alpha = raw.convert('RGBA').getchannel('A').crop((190,0,418,342))
+                bounds = alpha.point(lambda a: 255 if a>=128 else 0).getbbox()
+                heights.append(bounds[3]-bounds[1])
+        self.assertLess(max(heights)-min(heights), 20, heights)
 
     def test_timing_boundaries_and_idle_breathing(self):
         for clip in MANIFEST['clips'].values():

@@ -45,6 +45,8 @@ animation_dir = os.path.join(os.path.dirname(a.image), 'animations')
 with open(os.path.join(animation_dir, 'manifest.json'), encoding='utf-8') as file:
     manifest = json.load(file)
 image_cache = {}
+presentation = None
+presentation_start = 0
 
 def frame_for(name, index):
     relative = manifest['clips'][name]['frames'][index]
@@ -55,7 +57,7 @@ def frame_for(name, index):
     if not os.path.isfile(filename):
         filename = os.path.join(animation_dir, relative)
     raw = tk.PhotoImage(file=filename)
-    factor = max(1, round(max(raw.width(), raw.height()) / size))
+    factor = max(1, round(raw.height() / size))
     image_cache[relative] = raw.subsample(factor, factor)
     while len(image_cache) > 240:
         del image_cache[next(iter(image_cache))]
@@ -107,7 +109,8 @@ def peek_face(index):
         index=sources.index(original) if original in sources else 0
     raw = tk.PhotoImage(file=os.path.join(animation_dir,clip['frames'][index]))
     crop = tk.PhotoImage(width=216, height=216)
-    crop.tk.call(str(crop), 'copy', str(raw), '-from', 20, 12, 236, 228, '-to', 0, 0)
+    x, y, w, h = manifest.get('peekCrop', [20, 12, 216, 216])
+    crop.tk.call(str(crop), 'copy', str(raw), '-from', x, y, x+w, y+h, '-to', 0, 0)
     return crop.subsample(4, 4)  # 54x54px
 
 peek_faces = {'smile': peek_face(4), 'open': peek_face(0), 'blink': peek_face(3)}
@@ -233,7 +236,8 @@ def react():
     animate()
 
 def shift_background(shift):
-    global clip_start
+    global clip_start, presentation_start
+    presentation_start += shift/1000
     clip_start += shift/1000
     idle.next_at += shift
     if idle.started is not None: idle.started += shift
@@ -324,13 +328,26 @@ if manifest.get('catalog'):
         category = action['category']
         if category not in groups:
             groups[category] = tk.Menu(actions_menu, tearoff=False)
-            actions_menu.add_cascade(label=category, menu=groups[category])
+            actions_menu.add_cascade(label=manifest.get('categoryLabels', {}).get(category, '其他动作'), menu=groups[category])
         groups[category].add_command(label=action['nameZh'], command=lambda name=action['id']: preview_action(name))
     popup.add_cascade(label='全部动作（95）', menu=actions_menu)
+def request_behavior(mode=None):
+    request = {'type':'mode','mode':mode} if mode else {'type':'configure'}
+    temporary = a.state + '.request.json.tmp'
+    with open(temporary, 'w', encoding='utf-8') as file:
+        json.dump(request, file)
+    os.replace(temporary, a.state + '.request.json')
+
+mode_menu = tk.Menu(popup, tearoff=False)
+mode_var = tk.StringVar(value='balanced')
+for mode_id, mode_label in [('quiet','安静'),('balanced','均衡'),('lively','活泼')]:
+    mode_menu.add_radiobutton(label=mode_label, variable=mode_var, value=mode_id, command=lambda mode=mode_id: request_behavior(mode))
+popup.add_cascade(label='活跃度', menu=mode_menu)
+popup.add_command(label='配置动作池（在编辑器中打开）', command=request_behavior)
 popup.add_command(label='左右吸附与收起：开启 / 关闭', command=toggle_dock)
 popup.add_command(label='静音 / 恢复气泡', command=toggle_mute)
 popup.add_command(label='完成时自动展开：开启 / 关闭', command=toggle_notify)
-popup.add_command(label='退出桌宠（可在 Kiro 中重开）', command=close)
+popup.add_command(label='退出桌宠（可在编辑器中重开）', command=close)
 canvas.bind('<ButtonPress-1>', click)
 canvas.bind('<B1-Motion>', move)
 canvas.bind('<ButtonRelease-1>', release)
@@ -347,16 +364,28 @@ def parent_alive(pid):
     except PermissionError: return True
 
 def monitor():
-    global state, last_state, last_transition, clip_start, reaction_start, activity_detail
+    global state, last_state, last_transition, clip_start, reaction_start, activity_detail, presentation, presentation_start, last_frame
     if not parent_alive(a.parent): close(); return
     try:
         with open(a.state, encoding='utf-8') as f:
             payload = json.load(f)
-        current = (payload.get('state', 'idle'), payload.get('at'), payload.get('detail'), payload.get('reply'), payload.get('replyUntil'))
+        visual = payload.get('presentation')
+        if visual:
+            if not presentation or visual['seq'] != presentation['seq']:
+                if visual['intent'] in ('waiting','error','done'):
+                    cancel_reaction()
+                presentation_start = animation_now()
+                last_frame = None
+            if not presentation or visual['configKey'] != presentation['configKey']:
+                manifest['idleBehavior'] = visual['behavior']
+                idle.reset(animation_now()*1000)
+                mode_var.set(visual['behavior']['mode'])
+            presentation = visual
+        current = (payload.get('state', 'idle'), payload.get('at'), payload.get('detail'), payload.get('reply'), payload.get('replyUntil'), visual.get('seq') if visual else None)
         if current != last_state:
             last_state = current
             next_state = current[0] if current[0] in manifest['clips'] else 'idle'
-            transition = (next_state, payload.get('at'), payload.get('session'))
+            transition = (next_state, visual['seq'] if visual else payload.get('at'), payload.get('session'))
             changed = transition != last_transition
             if changed:
                 last_transition = transition
@@ -380,7 +409,7 @@ def monitor():
             animate()
     except (OSError, ValueError, TypeError):
         pass
-    root.after(700, monitor)
+    root.after(250, monitor)
 
 animation_job = None
 
@@ -407,12 +436,17 @@ def animate():
     if held is not None:
         name,index = held
         delay = interaction.next_delay
-    elif state == 'idle' and reaction_start is None:
+    elif (state == 'idle' or (presentation and presentation['intent'] == 'idle')) and reaction_start is None:
         name, index = idle.sample(now*1000)
         delay = idle.next_delay
     elif state in ('working','tool','editing') and reaction_start is None:
         name,index = work.sample(state,now*1000)
         delay = work.next_delay
+    if presentation and presentation.get('clip') in manifest['clips'] and held is None and reaction_start is None:
+        name = presentation['clip']
+        clip = dict(manifest['clips'][name], loop=presentation['loop'])
+        elapsed = (now-presentation_start)*1000
+        index, delay = frame_at(clip,elapsed), frame_delay(clip,elapsed)
     if root.winfo_viewable() and (name, index) != last_frame:
         canvas.itemconfigure(img, image=frame_for(name, index))
         last_frame = (name, index)

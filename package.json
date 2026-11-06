@@ -2,7 +2,7 @@
   "name": "kiro-whale-pet",
   "displayName": "KiroPet · 鲸鱼娘 AI 桌宠",
   "description": "鲸鱼娘 AI 桌宠：95 个透明动作、实时工作提示、左右吸附收起，个人非商业使用。",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "scripts": {
     "test": "node --test test/*.test.js",
     "verify": "node scripts/verify.js",
@@ -48,7 +48,7 @@
       },
       {
         "command": "kiroWhalePet.openPanel",
-        "title": "鲸鱼娘：打开 Kiro 内桌宠面板"
+        "title": "鲸鱼娘：打开编辑器内桌宠面板"
       },
       {
         "command": "kiroWhalePet.hide",
@@ -80,15 +80,15 @@
       },
       {
         "command": "kiroWhalePet.checkLink",
-        "title": "鲸鱼娘：诊断 Agent Hook 联动"
+        "title": "鲸鱼娘：诊断智能体事件联动"
       },
       {
         "command": "kiroWhalePet.installHooks",
-        "title": "鲸鱼娘：为当前项目安装 Agent Hooks"
+        "title": "鲸鱼娘：为当前项目安装智能体事件联动"
       },
       {
         "command": "kiroWhalePet.installHooksAll",
-        "title": "鲸鱼娘：为所有已打开项目安装 Agent Hooks"
+        "title": "鲸鱼娘：为所有已打开项目安装智能体事件联动"
       },
       {
         "command": "kiroWhalePet.removeHooks",
@@ -101,6 +101,10 @@
       {
         "command": "kiroWhalePet.checkSessions",
         "title": "鲸鱼娘：诊断本地会话监听"
+      },
+      {
+        "command": "kiroWhalePet.behavior",
+        "title": "鲸鱼娘：活跃度与动作设置"
       }
     ],
     "configuration": {
@@ -130,7 +134,11 @@
             "panel"
           ],
           "default": "auto",
-          "description": "auto: 启动系统悬浮窗（缺少桌面运行环境时退回 Kiro 面板）；panel: 只使用跨平台 Kiro 内面板。"
+          "description": "自动选择：优先显示桌面悬浮窗，缺少运行环境时使用编辑器面板；编辑器内面板：只在编辑器中显示。",
+          "enumItemLabels": [
+            "自动选择",
+            "编辑器内面板"
+          ]
         },
         "kiroWhalePet.localSessions.enabled": {
           "type": "boolean",
@@ -146,8 +154,52 @@
           "type": "boolean",
           "default": true,
           "description": "气泡显示已落盘回答的最新一两句（最多 90 字符），结束后停留 8 秒。摘录写入本地状态文件，不调用模型。不显示 Reasoning、提示词或工具结果；并非逐 token 实时流。"
+        },
+        "kiroWhalePet.behavior.mode": {
+          "type": "string",
+          "enum": [
+            "quiet",
+            "balanced",
+            "lively"
+          ],
+          "enumItemLabels": [
+            "安静",
+            "均衡",
+            "活泼"
+          ],
+          "default": "balanced",
+          "description": "控制空闲随机动作的间隔；工作、等待确认和报错仍由真实事件触发。"
+        },
+        "kiroWhalePet.behavior.pools": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "description": "通过“鲸鱼娘：活跃度与动作设置”选择各状态的动作。每次进入状态随机选择一个，连续同类事件不重复抽取。空池恢复默认。"
+        },
+        "kiroWhalePet.behavior.excluded": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "default": [],
+          "description": "禁止自动抽取的动作；可用中文多选菜单设置。手动预览不受影响，全部排除时使用呼吸保底。"
         }
       }
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/w47403/KiroPet.git"
+  },
+  "homepage": "https://github.com/w47403/KiroPet#readme",
+  "bugs": {
+    "url": "https://github.com/w47403/KiroPet/issues"
   }
 }

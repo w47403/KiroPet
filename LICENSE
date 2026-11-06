@@ -19,3 +19,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+Scope clarification (third-party assets)
+---------------------------------------
+The MIT License above applies to this project's original source code and
+original documentation, not to third-party animation media, character designs,
+or images derived from them. See THIRD_PARTY_ASSETS.md for attribution and the
+upstream non-commercial and character-license terms. Those assets are not
+relicensed under MIT by KiroPet.

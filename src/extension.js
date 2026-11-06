@@ -9,6 +9,9 @@ const { spawn } = require('child_process');
 const {eventProgress, isManagedHook, inspectHooks, disableOwnedHook} = require('./event-health');
 const {SessionMonitor} = require('./session-monitor');
 const {ActivityStore} = require('./activity-store');
+const {BehaviorPolicy, INTENTS, MODES} = require('./behavior-policy');
+let behaviorPolicy = null;
+let writeSnapshot = null;
 
 let extContext;
 let child = null;
@@ -41,7 +44,7 @@ function writableFiles() {
 function readActivity() {
   try {
     const obj = JSON.parse(fs.readFileSync(localStateFile(), 'utf8'));
-    return {state: STATES.has(obj.state) ? obj.state : 'idle',
+    return {intent: obj.intent, presentation: obj.presentation, state: STATES.has(obj.state) ? obj.state : 'idle',
       project: String(obj.project || '').slice(0, 80), detail: String(obj.detail || '').replace(/[\x00-\x1f]/g,' ').slice(0, 160),
       reply: String(obj.reply || '').slice(0, 180), replyUntil: Number(obj.replyUntil) || 0,
       phase: ['start','continue','finish'].includes(obj.phase) ? obj.phase : '',
@@ -70,6 +73,12 @@ function refresh() {
       if (hooks) persistSessionActivity(hooks);
       else if (readActivity().source === 'hook') activityStore.write({state: 'idle', at: Date.now(), event: 'Manual'});
     }
+  }
+  if (behaviorPolicy) {
+    const previous = activityStore.read();
+    const presentation = behaviorPolicy.sample();
+    if (previous && JSON.stringify(previous.presentation) !== JSON.stringify(presentation)) writeSnapshot({...previous, presentation});
+    consumeBehaviorRequest();
   }
   let activity = readActivity();
   // Once a live local session is observed, legacy Hooks must not overwrite it.
@@ -234,7 +243,7 @@ function buildHooks(projectName, workspace) {
 function recognizedHook(data) { return isManagedHook(data); }
 async function installForFolders(folders, silent = false) {
   if (settings().get('localSessions.enabled', true)) {
-    if (!silent) vscode.window.showInformationMessage('当前使用无钩子的本地会话监听，无需安装 Agent Hooks。');
+    if (!silent) vscode.window.showInformationMessage('当前使用无钩子的本地会话监听，无需安装智能体事件联动。');
     return;
   }
   if (!folders.length) return vscode.window.showWarningMessage('请先在 Kiro 打开一个本地项目文件夹。');
@@ -340,7 +349,7 @@ function htmlFor(webview) {
   header{display:flex;justify-content:space-between;align-items:center;gap:6px;font-weight:700;font-size:15px}
   .tag{border:1px solid var(--vscode-panel-border);padding:4px 8px;border-radius:99px;font-size:11px;font-weight:500}
   #stage{position:relative;height:350px;max-height:55vh;min-height:250px;display:flex;align-items:end;justify-content:center;overflow:hidden;cursor:pointer}
-  #pet{height:98%;max-width:100%;object-fit:contain;user-select:none;filter:drop-shadow(0 5px 6px rgba(49,136,202,.22));}
+  #pet{height:98%;max-width:100%;object-fit:contain;object-position:center bottom;user-select:none;filter:drop-shadow(0 5px 6px rgba(49,136,202,.22));}
   #bubble{position:absolute;top:5px;z-index:2;max-width:88%;background:var(--vscode-editorWidget-background);border:1px solid var(--vscode-panel-border);border-radius:14px;padding:8px 12px;text-align:center;font-size:12px;box-shadow:0 4px 12px #0002}
   .buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
   button{border:1px solid var(--vscode-button-border,transparent);border-radius:7px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);padding:9px;cursor:pointer}
@@ -355,6 +364,7 @@ function htmlFor(webview) {
 <div class="buttons">
 <button data-action="showDesktop">打开桌面悬浮窗</button>
 <button class="secondary" data-action="hideDesktop">关闭悬浮窗</button>
+<button class="secondary" data-action="behavior">活跃度与动作设置</button>
 <button class="secondary" data-action="openSettings">设置</button>
 <button class="secondary" data-state="sleep">休息</button>
 </div>
@@ -368,7 +378,7 @@ function htmlFor(webview) {
  <button class="secondary" data-action="checkLink">诊断事件联动</button>
 </div></details>
 <label>全部动作 <select id="animationChoice"><option value="">选择动作…</option></select></label>
-<p>关闭这个面板后，随时按 Ctrl/Cmd + Shift + P，运行「鲸鱼娘：打开 Kiro 内桌宠面板」。状态来自 Agent 事件，不代表真实 token 数量或 AI 内部思考进度。</p>
+<p>关闭这个面板后，随时按 Ctrl/Cmd + Shift + P，运行「鲸鱼娘：打开编辑器内桌宠面板」。状态来自 Agent 事件，不代表真实 token 数量或 AI 内部思考进度。</p>
 <script nonce="${nonce}">
 ${playerSource}
 const vscode=acquireVsCodeApi();const stage=document.getElementById('stage'),bubble=document.getElementById('bubble');
@@ -395,7 +405,7 @@ document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('clic
 document.querySelectorAll('[data-state]').forEach(el=>el.addEventListener('click',()=>vscode.postMessage({type:'setState',state:el.dataset.state})));
 let current={state:'idle',project:'',at:0};let seenAt=0;
 function draw(){if(document.hidden)return;let label={idle:'💤 待机中',working:'💻 正在处理',tool:'🛠️ 正在调用工具',editing:'📝 已修改文件',done:'✨ 完成啦',sleep:'🌙 休息中'}[current.state]||'待机中';
- document.getElementById('status').textContent=label;stage.className=current.state;
+ document.getElementById('status').textContent=current.presentation?.label||label;stage.className=current.state;
  let elapsed=(Date.now()-Number(current.at))/1000;
  const age=Number.isFinite(elapsed)&&elapsed>=0?Math.floor(elapsed):0;
  const active=['working','tool','editing'].includes(current.state);
@@ -411,8 +421,8 @@ function draw(){if(document.hidden)return;let label={idle:'💤 待机中',worki
  if(active&&Date.now()>until){bubble.textContent=stale?'暂未收到新的 Kiro 记录 · 不代表 AI 已完成':(current.detail||label); bubble.style.display='block';}
  else if(Date.now()>until)bubble.style.display='none';}
 window.addEventListener('message',evt=>{const data=evt.data;if(!data||data.type!=='activity')return;
- let next=data.activity;const transition=next.at!==current.at||next.state!==current.state||next.session!==current.session;const key=JSON.stringify([next.at,next.state,next.session,next.reply,next.replyUntil]);const newEvent=key!==seenAt;if(newEvent){seenAt=key;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};const reply=next.reply&&next.replyUntil>Date.now();say(reply?'回答 · '+next.reply:next.detail||map[next.state]||'嗨～',reply?Math.min(8000,next.replyUntil-Date.now()):2800)}
- current=next;if(transition)player.setState(next.state,next.state==='done'||next.phase==='start');animate();draw();});
+ let next=data.activity;const transition=next.presentation ? next.presentation.seq!==current.presentation?.seq||next.state!==current.state : next.at!==current.at||next.state!==current.state||next.session!==current.session;const key=JSON.stringify([next.at,next.state,next.session,next.reply,next.replyUntil]);const newEvent=key!==seenAt;if(newEvent){seenAt=key;let map={working:'正在处理你的请求',tool:'调用工具中…',editing:'正在更新文件',done:'大功告成！',idle:'随时待命～',sleep:'呼噜呼噜～'};const reply=next.reply&&next.replyUntil>Date.now();say(reply?'回答 · '+next.reply:next.detail||map[next.state]||'嗨～',reply?Math.min(8000,next.replyUntil-Date.now()):2800)}
+ current=next;player.setPresentation(next.presentation);if(transition)player.setState(next.presentation?.intent==='idle'?'idle':next.state,next.state==='done'||next.phase==='start');animate();draw();});
 setInterval(draw,500);vscode.postMessage({type:'ready'});
 </script></body></html>`;
 }
@@ -434,11 +444,60 @@ function openPanel() {
       case 'checkLink': await checkLink(); break;
       case 'checkSessions': await checkSessions(); break;
       case 'openSettings': openSettings(); break;
+      case 'behavior': openBehaviorMenu(); break;
       case 'setState': if (STATES.has(msg.state)) writeActivity(msg.state); break;
       default: break;
     }
   }, null, extContext.subscriptions);
   refresh();
+}
+function configureBehavior() {
+  behaviorPolicy.configure({mode:settings().get('behavior.mode','balanced'),
+    pools:settings().get('behavior.pools',{}),excluded:settings().get('behavior.excluded',[])});
+}
+async function chooseBehaviorMode() {
+  const picked=await vscode.window.showQuickPick(Object.entries(MODES).map(([id,value])=>({id,label:value.label,
+    description:id===settings().get('behavior.mode','balanced')?'当前模式':'',
+    detail:`随机动作播完后休息 ${value.restMinMs/1000}～${value.restMaxMs/1000} 秒`})),{placeHolder:'选择桌宠活跃度'});
+  if(picked) await settings().update('behavior.mode',picked.id,vscode.ConfigurationTarget.Global);
+}
+async function chooseActionPool() {
+  const picked=await vscode.window.showQuickPick(Object.entries(INTENTS).map(([id,value])=>({id,label:value.label})),{placeHolder:'选择要配置动作的状态'});
+  if(!picked)return;
+  const pools=settings().get('behavior.pools',{});
+  const current=new Set(pools[picked.id] || behaviorPolicy.pools[picked.id].map(id=>behaviorPolicy.manifest.clips[id].sourceId||id));
+  const excluded=new Set(settings().get('behavior.excluded',[]));
+  const actions=behaviorPolicy.manifest.catalog.filter(a=>!excluded.has(a.id)).map(a=>({id:a.id,label:a.nameZh,
+    description:behaviorPolicy.manifest.categoryLabels[a.category],picked:current.has(a.id)}));
+  const selected=await vscode.window.showQuickPick(actions,{canPickMany:true,placeHolder:`${picked.label}：勾选动作；全不选则恢复默认（被排除的动作不参与）`});
+  if(!selected)return;
+  const next={...pools}; if(selected.length)next[picked.id]=selected.map(a=>a.id);else delete next[picked.id];
+  await settings().update('behavior.pools',next,vscode.ConfigurationTarget.Global);
+}
+async function chooseExcludedActions() {
+  const excluded=new Set(settings().get('behavior.excluded',[]));
+  const selected=await vscode.window.showQuickPick(behaviorPolicy.manifest.catalog.map(a=>({id:a.id,label:a.nameZh,
+    description:behaviorPolicy.manifest.categoryLabels[a.category],picked:excluded.has(a.id)})),
+    {canPickMany:true,placeHolder:'勾选不希望自动播放的动作；手动预览仍可使用，呼吸是空池保底动作'});
+  if(selected)await settings().update('behavior.excluded',selected.map(a=>a.id),vscode.ConfigurationTarget.Global);
+}
+async function openBehaviorMenu() {
+  const picked=await vscode.window.showQuickPick([
+    {label:'活跃度：'+MODES[behaviorPolicy.mode].label,run:chooseBehaviorMode},
+    {label:'配置各状态的动作池',run:chooseActionPool},
+    {label:'排除不喜欢的自动动作',run:chooseExcludedActions},
+    {label:'恢复默认动作池',run:async()=>{await settings().update('behavior.pools',{},vscode.ConfigurationTarget.Global);await settings().update('behavior.excluded',[],vscode.ConfigurationTarget.Global);}},
+  ],{placeHolder:'鲸鱼娘 · 活跃度与动作设置（自动保存，立即生效）'});
+  if(picked)await picked.run();
+}
+function consumeBehaviorRequest() {
+  const file=localStateFile()+'.request.json';
+  if(!fs.existsSync(file))return;
+  let request;try{request=JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''));}catch{return;}
+  fs.unlinkSync(file);
+  if(request.type==='mode' && MODES[request.mode]) settings().update('behavior.mode',request.mode,vscode.ConfigurationTarget.Global);
+  else if(request.type==='state' && STATES.has(request.state))writeActivity(request.state);
+  else if(request.type==='configure')openBehaviorMenu();
 }
 function openSettings() { return vscode.commands.executeCommand('workbench.action.openSettings', 'kiroWhalePet'); }
 async function openAdvancedMenu() {
@@ -450,9 +509,9 @@ async function openAdvancedMenu() {
     {label:'$(edit) 修改文件', fn:()=>writeActivity('editing')},
     {label:'$(moon) 休息', fn:()=>writeActivity('sleep')},
     {label:'$(pulse) 检查联动与完成事件', fn:checkLink},
-    {label:'$(eye) 诊断本地会话监听（方案 A）', fn:checkSessions},
-    {label:'$(plug) 为当前项目安装 Agent 联动', fn:installHooks},
-    {label:'$(files) 为所有已打开项目安装 Agent 联动', fn:installHooksAll},
+    {label:'$(eye) 诊断本地会话监听（本地记录）', fn:checkSessions},
+    {label:'$(plug) 为当前项目安装智能体联动', fn:installHooks},
+    {label:'$(files) 为所有已打开项目安装智能体联动', fn:installHooksAll},
     {label:'$(trash) 移除当前项目联动', fn:removeHooks}
   ];
   const chosen = await vscode.window.showQuickPick(choices, {placeHolder:'鲸鱼娘 · 手动演示与诊断'});
@@ -462,10 +521,11 @@ async function openMenu() {
   const autoStart = settings().get('autoStart', true);
   const choices = [
     {label:'$(window) 显示桌面悬浮窗', fn:()=>startDesktop(true)},
-    {label:'$(preview) 打开 Kiro 内桌宠面板', fn:openPanel},
+    {label:'$(preview) 打开编辑器内桌宠面板', fn:openPanel},
     {label:'$(close) 关闭桌面悬浮窗', fn:stopDesktop},
+    {label:'$(heart) 活跃度与动作设置', fn:openBehaviorMenu},
     {label:'$(settings-gear) 设置', fn:openSettings},
-    {label:`$(play) ${autoStart?'关闭':'开启'} Kiro 启动时自动显示`, fn:toggleAutoStart},
+    {label:`$(play) ${autoStart?'关闭':'开启'} 编辑器启动时自动显示`, fn:toggleAutoStart},
     {label:'$(tools) 手动演示与诊断…', fn:openAdvancedMenu}
   ];
   const chosen = await vscode.window.showQuickPick(choices, {placeHolder:'鲸鱼娘桌宠 · 选择操作'});
@@ -474,6 +534,10 @@ async function openMenu() {
 function activate(context) {
   extContext=context;
   activityStore = new ActivityStore(dataDir());
+  behaviorPolicy = new BehaviorPolicy(JSON.parse(fs.readFileSync(path.join(assetsDir(),'animations/manifest.json'),'utf8')));
+  configureBehavior();
+  writeSnapshot = activityStore.write.bind(activityStore);
+  activityStore.write = activity => { behaviorPolicy.submit(activity); writeSnapshot({...activity,presentation:behaviorPolicy.sample()}); };
   lastHookSignature = undefined;
   try { writableFiles(); } catch (e) { vscode.window.showWarningMessage('鲸鱼娘初始化配置目录失败：'+e.message); }
   const prev = readActivity();
@@ -482,6 +546,7 @@ function activate(context) {
   statusItem.command = P+'openMenu'; statusItem.show(); context.subscriptions.push(statusItem);
   const register=(name,fn)=>context.subscriptions.push(vscode.commands.registerCommand(P+name,fn));
   register('openMenu', openMenu);
+  register('behavior', openBehaviorMenu);
   register('show', ()=>startDesktop(true));
   register('openPanel', openPanel);
   register('hide', stopDesktop);
@@ -500,11 +565,12 @@ function activate(context) {
   register('installHooksAll', installHooksAll);
   register('removeHooks', removeHooks);
   register('toggleAutoStart', toggleAutoStart);
-  refreshTimer = setInterval(refresh, 900);
+  refreshTimer = setInterval(refresh, 250);
   context.subscriptions.push({dispose:()=>{clearInterval(refreshTimer);refreshTimer=null;}});
   startSessionMonitor();
   context.subscriptions.push({dispose:()=>sessionMonitor?.dispose()});
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+    if (event.affectsConfiguration('kiroWhalePet.behavior')) { configureBehavior(); refresh(); }
     if (event.affectsConfiguration('kiroWhalePet.localSessions')) startSessionMonitor();
   }));
   // Existing generated hooks can be older than the extension itself.

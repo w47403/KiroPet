@@ -16,6 +16,10 @@ $runtimeScripts = Join-Path (Split-Path -Parent (Split-Path -Parent $AssetPath))
 . (Join-Path $runtimeScripts 'PetPreferences.ps1')
 . (Join-Path $runtimeScripts 'animation_timing.ps1')
 
+$script:animationFolder = Join-Path (Split-Path -Parent $AssetPath) 'animations'
+$script:manifest = Get-Content -LiteralPath (Join-Path $script:animationFolder 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$script:frameAspect = [Math]::Max(1.0, [double]$script:manifest.frameSize[0] / $script:manifest.frameSize[1])
+
 $script:configuredSize = [Math]::Max(100, [Math]::Min(320, $InitialSize))
 $script:preferences = Read-PetPreferences $PreferencesPath $script:configuredSize
 $script:whaleSize = $script:preferences.size
@@ -27,6 +31,9 @@ $script:lastEventKey = ''
 $script:lastTransitionKey = ''
 $script:bubbleUntil = [DateTime]::UtcNow
 $script:mood = 'idle'
+$script:presentation = $null
+$script:presentationStart = [DateTime]::UtcNow
+$script:lastRenderedName = ''
 $script:activityDetail = ''
 $script:lastActivityAt = [DateTime]::UtcNow
 $script:eventCount = 0
@@ -44,7 +51,7 @@ $script:phrases = @('在呢～', '摸摸头，继续加油！', '今天也要写
 
 $script:window = New-Object System.Windows.Window
 $script:window.Title = 'Kiro 鲸鱼娘桌宠'
-$script:window.Width = $script:whaleSize + 42
+$script:window.Width = $script:whaleSize * $script:frameAspect + 42
 $script:window.Height = $script:whaleSize + 76
 $script:window.WindowStartupLocation = 'Manual'
 $script:window.WindowStyle = [System.Windows.WindowStyle]::None
@@ -62,7 +69,7 @@ $script:root.Background = [System.Windows.Media.Brushes]::Transparent
 $script:window.Content = $script:root
 
 $script:picture = New-Object System.Windows.Controls.Image
-$script:picture.Width = $script:whaleSize
+$script:picture.Width = $script:whaleSize * $script:frameAspect
 $script:picture.Height = $script:whaleSize
 $script:picture.Stretch = [System.Windows.Media.Stretch]::Uniform
 $script:picture.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
@@ -76,8 +83,6 @@ $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
 $bmp.EndInit()
 $bmp.Freeze()
 $script:picture.Source = $bmp
-$script:animationFolder = Join-Path (Split-Path -Parent $AssetPath) 'animations'
-$script:manifest = Get-Content -LiteralPath (Join-Path $script:animationFolder 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $script:frameCache = @{}
 $script:bitmapCache = @{}
 $script:clipName = ''
@@ -189,9 +194,9 @@ function Say([string]$message, [int]$seconds = 3) {
 function Apply-Size([int]$newSize) {
   Expand-Dock $true
   $script:whaleSize = $newSize
-  $script:window.Width = $newSize + 42
+  $script:window.Width = $newSize * $script:frameAspect + 42
   $script:window.Height = $newSize + 76
-  $script:picture.Width = $newSize
+  $script:picture.Width = $newSize * $script:frameAspect
   $script:picture.Height = $newSize
   Initialize-FrameCache
   $script:lastFrameIndex=-1
@@ -238,7 +243,8 @@ foreach ($entry in @(@('smile',4),@('open',0),@('blink',3))) {
   $source.UriSource=[System.Uri]::new((Join-Path $script:animationFolder $idleClip.frames[$sourceIndex]),[System.UriKind]::Absolute)
   $source.CacheOption=[System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
   $source.EndInit(); $source.Freeze()
-  $crop = [System.Windows.Media.Imaging.CroppedBitmap]::new($source,[System.Windows.Int32Rect]::new(20,12,216,216))
+  $face = if ($script:manifest.peekCrop) { $script:manifest.peekCrop } else { @(20,12,216,216) }
+  $crop = [System.Windows.Media.Imaging.CroppedBitmap]::new($source,[System.Windows.Int32Rect]::new($face[0],$face[1],$face[2],$face[3]))
   $crop.Freeze()
   $script:peekFaces[$entry[0]] = $crop
 }
@@ -394,6 +400,7 @@ function Add-MenuItem([System.Windows.Controls.ContextMenu]$menu, [string]$label
 $menu = New-Object System.Windows.Controls.ContextMenu
 function Restore-Reaction([double]$shift) {
   $script:reactionUntil = $null
+  $script:presentationStart = $script:presentationStart.AddMilliseconds($shift)
   $script:taskStart = $script:taskStart.AddMilliseconds($shift)
   $script:loopStart = $script:loopStart.AddMilliseconds($shift)
   if ($script:doneStarted) { $script:doneStarted = $script:doneStarted.AddMilliseconds($shift) }
@@ -442,7 +449,8 @@ if ($script:manifest.catalog) {
   foreach ($action in $script:manifest.catalog) {
     if (-not $groups.ContainsKey($action.category)) {
       $group = New-Object System.Windows.Controls.MenuItem
-      $group.Header = $action.category
+      $categoryLabel = $script:manifest.categoryLabels.($action.category)
+      $group.Header = if ($categoryLabel) { $categoryLabel } else { '其他动作' }
       $groups[$action.category] = $group
       [void]$allActions.Items.Add($group)
     }
@@ -464,19 +472,38 @@ if ($script:manifest.catalog) {
   }
   [void]$menu.Items.Add($allActions)
 }
-Add-MenuItem $menu '💻 工作中' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'working'; Switch-Art 'happy'; Say '正在认真写代码！' }
-Add-MenuItem $menu '🛠 调用工具' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'tool'; Switch-Art 'tool'; Say '工具准备好啦～' }
-Add-MenuItem $menu '📝 修改文件' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'editing'; Switch-Art 'editing'; Say '正在更新文件～' }
-Add-MenuItem $menu '✨ 完成啦' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'done'; Switch-Art 'done' $true; Say '任务完成！辛苦啦～' }
-Add-MenuItem $menu '💤 休息一下' {
-  $script:activityDetail=''; Cancel-Reaction; $script:mood='idle'; $script:idleName='idle'; $script:idleStarted=$null
-  $script:idleNext=(Get-AnimationTime).AddSeconds(22); Switch-Art 'idle' $true; Say '休息一会儿也不错～'
+function Send-BehaviorRequest([string]$mode = '', [string]$state = '') {
+  $request = if ($state) { @{type='state';state=$state} } elseif ($mode) { @{type='mode';mode=$mode} } else { @{type='configure'} }
+  $file = $StatePath + '.request.json'
+  [System.IO.File]::WriteAllText($file+'.tmp', ($request | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
+  Move-Item -LiteralPath ($file+'.tmp') -Destination $file -Force
 }
-Add-MenuItem $menu '🌙 打个盹' { $script:activityDetail=''; Cancel-Reaction; $script:mood = 'sleep'; Switch-Art 'sleep' $true; Say '呼噜呼噜～' }
+$modeMenu = New-Object System.Windows.Controls.MenuItem
+$modeMenu.Header = '活跃度'
+$script:modeItems = @{}
+foreach ($mode in @(@('quiet','安静'),@('balanced','均衡'),@('lively','活泼'))) {
+  $item = New-Object System.Windows.Controls.MenuItem
+  $item.Header=$mode[1]; $item.Tag=$mode[0]; $item.IsCheckable=$true
+  $item.IsChecked=$mode[0] -eq 'balanced'
+  $item.Add_Click({ param($sender,$args) Send-BehaviorRequest ([string]$sender.Tag) })
+  $script:modeItems[$mode[0]]=$item
+  [void]$modeMenu.Items.Add($item)
+}
+[void]$menu.Items.Add($modeMenu)
+Add-MenuItem $menu '配置动作池（在编辑器中打开）' { Send-BehaviorRequest }
+Add-MenuItem $menu '💻 工作中' { Send-BehaviorRequest -state 'working'; $script:activityDetail=''; Cancel-Reaction; $script:mood = 'working'; Switch-Art 'happy'; Say '正在认真写代码！' }
+Add-MenuItem $menu '🛠 调用工具' { Send-BehaviorRequest -state 'tool'; $script:activityDetail=''; Cancel-Reaction; $script:mood = 'tool'; Switch-Art 'tool'; Say '工具准备好啦～' }
+Add-MenuItem $menu '📝 修改文件' { Send-BehaviorRequest -state 'editing'; $script:activityDetail=''; Cancel-Reaction; $script:mood = 'editing'; Switch-Art 'editing'; Say '正在更新文件～' }
+Add-MenuItem $menu '✨ 完成啦' { Send-BehaviorRequest -state 'done'; $script:activityDetail=''; Cancel-Reaction; $script:mood = 'done'; Switch-Art 'done' $true; Say '任务完成！辛苦啦～' }
+Add-MenuItem $menu '💤 休息一下' { Send-BehaviorRequest -state 'idle';
+  $script:activityDetail=''; Cancel-Reaction; $script:mood='idle'; $script:idleName='idle'; $script:idleStarted=$null
+  $script:idleNext=(Get-AnimationTime).AddMilliseconds($script:manifest.idleBehavior.initialHoldMs); Switch-Art 'idle' $true; Say '休息一会儿也不错～'
+}
+Add-MenuItem $menu '🌙 打个盹' { Send-BehaviorRequest -state 'sleep'; $script:activityDetail=''; Cancel-Reaction; $script:mood = 'sleep'; Switch-Art 'sleep' $true; Say '呼噜呼噜～' }
 [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
-Add-MenuItem $menu '小小只 (140px)' { Apply-Size 140 }
-Add-MenuItem $menu '正常大小 (190px)' { Apply-Size 190 }
-Add-MenuItem $menu '大大只 (260px)' { Apply-Size 260 }
+Add-MenuItem $menu '小小只 (140 像素)' { Apply-Size 140 }
+Add-MenuItem $menu '正常大小 (190 像素)' { Apply-Size 190 }
+Add-MenuItem $menu '大大只 (260 像素)' { Apply-Size 260 }
 [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
 Add-MenuItem $menu '静音 / 恢复气泡' {
   $script:mute = -not $script:mute
@@ -566,7 +593,7 @@ $script:picture.Add_LostMouseCapture({ Finish-PetPress $true })
 
 # Polls the text token written by the extension or optional Kiro Agent Hooks.
 $script:monitor = New-Object System.Windows.Threading.DispatcherTimer
-$script:monitor.Interval = [TimeSpan]::FromMilliseconds(700)
+$script:monitor.Interval = [TimeSpan]::FromMilliseconds(250)
 function Update-Activity {
   try {
     if ($ParentProcessId -gt 0) {
@@ -577,9 +604,25 @@ function Update-Activity {
       $raw = [System.IO.File]::ReadAllText($StatePath).Trim()
       if ($raw.StartsWith('{')) {
         $event = $raw | ConvertFrom-Json
+        if ($event.presentation) {
+          $visual=$event.presentation
+          if (-not $script:presentation -or $visual.seq -ne $script:presentation.seq) {
+            if ($visual.intent -in @('waiting','error','done')) { Cancel-Reaction }
+            $script:presentationStart=Get-AnimationTime
+            $script:lastRenderedName=''
+          }
+          if (-not $script:presentation -or $visual.configKey -ne $script:presentation.configKey) {
+            $script:manifest.idleBehavior=$visual.behavior
+            $script:idleName='idle'; $script:idleStarted=$null
+            $script:idleNext=(Get-AnimationTime).AddMilliseconds($visual.behavior.initialHoldMs)
+            foreach ($key in @($script:modeItems.Keys)) { $script:modeItems[$key].IsChecked=$key -eq $visual.behavior.mode }
+          }
+          $script:presentation=$visual
+        }
         $next = [string]$event.state
-        $eventKey = "$($event.at)|$($event.state)|$($event.project)|$($event.detail)|$($event.reply)|$($event.replyUntil)"
-        $transitionKey = "$($event.at)|$($event.state)|$($event.session)"
+        $eventKey = "$($event.at)|$($event.state)|$($event.project)|$($event.detail)|$($event.reply)|$($event.replyUntil)|$($event.presentation.seq)|$($event.presentation.configKey)"
+        $visualKey = if ($event.presentation) { $event.presentation.seq } else { $event.at }
+        $transitionKey = "$visualKey|$($event.state)|$($event.session)"
         $project = [string]$event.project
         $script:activityDetail = [string]$event.detail
         $script:eventCount = [int]$event.eventCount
@@ -603,7 +646,7 @@ function Update-Activity {
         Cancel-Reaction
         if ($raw.StartsWith('{') -and $event.phase -eq 'start') { $script:taskActive=$false; $script:workAccentStart=$null }
         if ($next -eq 'idle' -and $script:mood -ne 'idle') {
-          $script:idleName='idle'; $script:idleStarted=$null; $script:idleNext=(Get-AnimationTime).AddSeconds(22)
+          $script:idleName='idle'; $script:idleStarted=$null; $script:idleNext=(Get-AnimationTime).AddMilliseconds($script:manifest.idleBehavior.initialHoldMs)
         }
         $projectHint = if ($project) { "[$project] " } else { '' }
         switch ($next) {
@@ -652,7 +695,7 @@ function Update-Animation {
   }
   $now=Get-AnimationTime
   if ($script:dragging) { Switch-Art 'drag' }
-  $quiet = $script:mood -eq 'idle' -and -not $script:reactionUntil -and -not $script:dragging
+  $quiet = ($script:mood -eq 'idle' -or ($script:presentation -and $script:presentation.intent -eq 'idle')) -and -not $script:reactionUntil -and -not $script:dragging
   $working = $script:mood -in @('working','tool','editing') -and -not $script:reactionUntil -and -not $script:dragging
   $workElapsed = 0
   $introLength = ($script:manifest.clips.work_start.durations | Measure-Object -Sum).Sum
@@ -682,7 +725,7 @@ function Update-Animation {
         if (-not $weight) { $weight = 1 }
         for ($w=0; $w -lt $weight; $w++) { $_ }
       })
-      $script:idleName = $weighted[(Get-Random -Maximum $weighted.Count)]
+      $script:idleName = if ($weighted.Count) { $weighted[(Get-Random -Maximum $weighted.Count)] } else { 'idle' }
       Switch-Art $script:idleName $true
       $script:idleStarted = $now
       $length = ($script:manifest.clips.($script:idleName).durations | Measure-Object -Sum).Sum
@@ -711,12 +754,20 @@ function Update-Animation {
   if ($quiet -and $script:manifest.continuousIdle -and $script:clipName -eq 'idle') { $elapsed = ($now-$script:clipStart).TotalMilliseconds }
   $loop=($clip.loop -or ($working -and $script:mood -eq 'tool' -and $script:clipName -eq 'work_pause')) -and -not $quiet
   if ($quiet -and $script:manifest.continuousIdle -and $script:clipName -eq 'idle') { $loop=$true }
+  $renderName=$script:clipName
+  if ($script:presentation.clip -and -not $script:dragging -and -not $script:reactionUntil -and $script:manifest.clips.PSObject.Properties[$script:presentation.clip]) {
+    $renderName=[string]$script:presentation.clip
+    $clip=$script:manifest.clips.$renderName
+    $elapsed=($now-$script:presentationStart).TotalMilliseconds
+    $loop=[bool]$script:presentation.loop
+  }
   $sample=Get-FrameSample $clip $elapsed $loop
   $index=$sample.index; $nextFrameMs=$sample.delay
   # Sleep until the next frame boundary; a held pose needs no 60Hz polling.
   $script:animate.Interval = [TimeSpan]::FromMilliseconds([Math]::Max(16, [Math]::Min(250, $nextFrameMs)))
-  if ($index -ne $script:lastFrameIndex) {
-    $script:picture.Source = Get-PetFrame $script:clipName $index
+  if ($index -ne $script:lastFrameIndex -or $renderName -ne $script:lastRenderedName) {
+    $script:picture.Source = Get-PetFrame $renderName $index
+    $script:lastRenderedName=$renderName
     $script:lastFrameIndex = $index
   }
   if ([DateTime]::UtcNow -gt $script:bubbleUntil) {

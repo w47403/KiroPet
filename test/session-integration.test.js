@@ -7,7 +7,7 @@ const os = require('os');
 const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 
-test('extension persists local events for desktop, resists Hook overwrite and clears previews on config change', t => {
+test('extension persists local events for desktop, resists Hook overwrite and clears previews on config change', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiropet-integration-'));
   const project = path.join(dir, 'project');
   const hook = path.join(project, '.kiro', 'hooks', 'whale-pet.json');
@@ -16,16 +16,17 @@ test('extension persists local events for desktop, resists Hook overwrite and cl
   const monitors = [], commands = new Map(), subscriptions = [];
   const options = {autoStart: false};
   let configurationChanged;
+  const picks=[];
   const vscode = {
     workspace: {
       workspaceFolders: [{name: 'project', uri: {scheme: 'file', fsPath: project}}],
-      getConfiguration: () => ({get: (key, fallback) => options[key] ?? fallback}),
+      getConfiguration: () => ({get: (key, fallback) => options[key] ?? fallback, update: async (key,value) => { options[key]=value; configurationChanged({affectsConfiguration:name=>name==='kiroWhalePet.behavior'}); }}),
       onDidChangeConfiguration: callback => { configurationChanged = callback; return {dispose() {}}; },
       onDidChangeWorkspaceFolders: () => ({dispose() {}})
     },
-    StatusBarAlignment: {Right: 2},
+    StatusBarAlignment: {Right: 2}, ConfigurationTarget:{Global:1},
     commands: {registerCommand: (name, callback) => { commands.set(name, callback); return {dispose() {}}; }},
-    window: {createStatusBarItem: () => ({show() {}, dispose() {}}), showWarningMessage: msg => assert.fail(msg)}
+    window: {showQuickPick:async items=>picks.shift()(items), createStatusBarItem: () => ({show() {}, dispose() {}}), showWarningMessage: msg => assert.fail(msg)}
   };
   class FakeMonitor {
     constructor(config) { this.config = config; this.root = config.root; monitors.push(this); }
@@ -45,7 +46,9 @@ test('extension persists local events for desktop, resists Hook overwrite and cl
   const activity = {state: 'tool', at: Date.now(), startedAt: Date.now() - 5000, eventCount: 4, source: 'session', event: 'tool_call', detail: 'read_file'};
   monitors[0].config.onActivity(activity);
   const stateFile = sandbox.module.exports.stateFile();
-  assert.deepEqual(JSON.parse(fs.readFileSync(stateFile)), activity);
+  const {presentation, ...truth}=JSON.parse(fs.readFileSync(stateFile));
+  assert.deepEqual(truth, activity);
+  assert.equal(presentation.intent,'idle'); // Animation buffers while task truth is already current.
   fs.writeFileSync(stateFile, JSON.stringify({state: 'done', at: Date.now(), event: 'AgentStop'}));
   sandbox.module.exports.refresh();
   assert.equal(JSON.parse(fs.readFileSync(stateFile)).source, 'session');
@@ -59,4 +62,16 @@ test('extension persists local events for desktop, resists Hook overwrite and cl
   configurationChanged({affectsConfiguration: () => true});
   assert.equal(monitors[0].disposed, true);
   assert.equal(monitors.length, 1);
+  picks.push(items=>items[0],items=>items.find(item=>item.id==='lively'));
+  await commands.get('kiroWhalePet.behavior')();
+  assert.equal(options['behavior.mode'],'lively');
+  assert.equal(JSON.parse(fs.readFileSync(stateFile)).presentation.behavior.restMinMs,8000);
+  picks.push(items=>items[1],items=>items.find(item=>item.id==='reading'),items=>items.filter(item=>['coding','taking_notes'].includes(item.id)));
+  await commands.get('kiroWhalePet.behavior')();
+  assert.deepEqual(Array.from(options['behavior.pools'].reading),['taking_notes','coding']);
+  fs.writeFileSync(stateFile+'.request.json',JSON.stringify({type:'mode',mode:'quiet'}));
+  sandbox.module.exports.refresh();
+  assert.equal(options['behavior.mode'],'quiet');
+  assert.equal(fs.existsSync(stateFile+'.request.json'),false);
+
 });
